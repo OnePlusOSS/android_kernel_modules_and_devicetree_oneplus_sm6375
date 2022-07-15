@@ -1,0 +1,2 @@
+#include "AW36515_FLASH_SETTING.h"
+#include "SY7806E_FLASH_SETTING.h"
