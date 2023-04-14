@@ -1,0 +1,19 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-larry-overlay-common.dtsi"
+#include "blair-larry-22872-overlay.dtsi"
+#include "sensor/larry-22874-sensor-qrd.dtsi"
+#include "charge/oplus_charge_22874.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <22872>;
+        oplus,region_id = <4>;
+};
+
+#include "nfc/larry-22872-nfc-pn557.dtsi"
+#include "camera/blair-22872-camera-sensor-mtp.dtsi"

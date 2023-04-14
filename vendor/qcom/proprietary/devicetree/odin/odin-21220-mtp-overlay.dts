@@ -1,0 +1,346 @@
+/dts-v1/;
+/plugin/;
+
+#include "../qcom/holi-pm6125-overlay.dtsi"
+#include "../qcom/holi-regulators-pm6125.dtsi"
+#include "../qcom/holi-mtp-pm6125.dtsi"
+
+/* #ifdef OPLUS_ARCH_EXTENDS */
+#include "mozart-holi-audio-overlay.dtsi"
+/* #endif OPLUS_ARCH_EXTENDS */
+
+/* DTBO: project Special overlay */
+
+/ {
+	model = "Qualcomm Technologies, Inc. Holi MTP PM6125 NOPMI";
+	compatible = "qcom,holi-mtp", "qcom,holi", "qcom,mtp";
+	qcom,msm-id = <454 0x10000>, <472 0x10000>;
+	qcom,board-id = <8 0>;
+	qcom,pmic-id-size = <4>;
+	qcom,pmic-id = <0x2D 0x0 0x0 0x0>;
+	oplus,dtsi_no = <21220>;
+};
+
+&soc{
+	oplus_secure_common {
+		compatible = "oplus,secure_common";
+		oplus,sec_reg_num = <0x1B405D8>;
+		oplus,sec_en_anti_reg = <0x1B401CC>;
+		oplus,sec_override1_reg = <0x7860C0>;
+		oplus,override1_en_value = <0x1>;
+	};
+
+	oplus_fp_common {
+		compatible = "oplus,fp_common";
+		oplus,fp_gpio_num = <1>;
+		oplus,fp_gpio_0 = <&tlmm 53 0x0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_id2_default>;
+		goodix_optical_G3s {
+			oplus,fp-id = <1>; /* fp id mapping table */
+			vendor-chip = <11>; /* please refer to the struct fp_vendor_t in oplus_fp_commmon.h */
+			eng-menu = "-1,-1"; /* represents SNR, inclination test item in engineer menu, and 0/1 means off/on */
+			chip-name = "G_OPTICAL_G3S";  /* /proc/fp_id, will be displayed in engineer menu  */
+		};
+		goodix_optical_G3s_bak {
+			oplus,fp-id = <0>; /* fp id mapping table */
+			vendor-chip = <11>; /* please refer to the struct fp_vendor_t in oplus_fp_commmon.h */
+			eng-menu = "-1,-1"; /* represents SNR, inclination test item in engineer menu, and 0/1 means off/on */
+			chip-name = "G_OPTICAL_G3S";  /* /proc/fp_id, will be displayed in engineer menu  */
+		};
+       };
+
+	goodix_fp {
+		status = "ok";
+		compatible = "goodix,goodix_fp";
+		interrupt-parent = <&tlmm>;
+		interrupts = <17 0>;
+		ldo-supply = <&pm6125_l21>;
+		ldo-config = <3300000 3300000 150000>;
+		goodix,gpio_irq = <&tlmm 17 0x1>;
+		goodix,gpio_reset = <&tlmm 18 0x0>;
+		//gpio-power = <&tlmm 91 0x0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_goodix_irq_default>;
+		notify_tpinfo_flag = <1>;
+		power-num = <1>;
+		power_source_1 {
+			power-mode = <1>;
+			power-name = "ldo";
+			power-config = "ldo-config";
+			delay-time = <0>;
+		};
+	};
+};
+
+&usb0 {
+	dpdm-supply = <&qusb_phy0>;
+	dwc3@4e00000 {
+		usb-phy = <&qusb_phy0>, <&usb_nop_phy>;
+		maximum-speed = "high-speed";
+		dr_mode = "peripheral";
+	};
+};
+
+
+&soc {
+/*#ifdef OPLUS_FEATURE_TP_BASIC*/
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&key_vol_down_default>;
+		/* using volume down config update the default value */
+		vol_down {
+			label = "volume_down";
+			gpios = <&pm6125_gpios  2 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+};
+
+//#ifdef OPLUS_FEATURE_TP_BASIC
+&soc {
+	devinfo {
+		status = "disabled";
+	};
+	oplus_devinfo {
+		compatible = "oplus-devinfo";
+
+		pinctrl-names = "default", "sleep", "active", "idle";
+		pinctrl-0 = <&hw_pins_default>;
+		pinctrl-1 = <&aboard_pin_gpio0_sleep>;
+		pinctrl-2 = <&aboard_pin_gpio0_active>;
+		pinctrl-3 = <&aboard_pin_gpio0_idle>;
+		main-sub {
+			use_tristate_gpio;
+			compatible = "hw-match, main-sub";
+			aboard-gpio0 = <&tlmm  116 0>;
+			aboard-patterns = <0 0 0>;	/*0[high-resistance] 1[pull-down] 2[pull-up]*/
+			/*main board*/
+			match-projects = <21220 21221 21223>;
+		};
+	};
+};
+
+&tlmm {
+	//#endif /*OPLUS_FEATURE_FINGERPRINT*/
+
+	/* add pingrp for touchscreen */
+	pmx_ts_int_active_oplus {
+		ts_int_active: ts_int_active {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <8>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	pmx_ts_int_suspend_oplus {
+		ts_int_suspend1: ts_int_suspend1 {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <8>;
+				//bias-pull-down;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
+
+	pmx_ts_reset_active_oplus {
+		ts_reset_active: ts_reset_active {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <8>;
+				output-low;
+				bias-disable;
+			};
+		};
+	};
+
+	pmx_ts_reset_suspend_oplus {
+		ts_reset_suspend1: ts_reset_suspend1 {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	oplus_fp_common{
+		gpio_id2_default: gpio_id2_default {
+			mux {
+				pins = "gpio";
+				function = "gpio53";
+			};
+			config {
+				pins = "gpio53";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
+
+	goodix_fp{
+		gpio_goodix_irq_default: gpio_goodix_irq_default {
+			mux {
+				pins = "gpio17";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio17";
+				drive-strength = <2>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	//#ifdef OPLUS_FEATURE_TP_BASIC
+        aboard_pin {
+		hw_pins_default:hw_pins_default {
+		};
+
+		aboard_pin_gpio0_sleep:aboard_pin_gpio0_sleep {
+			mux {
+				pins = "gpio116";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio116";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_active:aboard_pin_gpio0_active {
+			mux {
+				pins = "gpio116";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio116";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_idle:aboard_pin_gpio0_idle {
+			mux {
+				pins = "gpio116";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio116";
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+	//#endif /*OPLUS_FEATURE_TP_BASIC*/
+};
+
+
+&qupv3_se8_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "ok";
+
+	Focaltech21031@38 {
+		compatible = "focaltech,fts";
+		reg = <0x38>;
+		chip-name = "FT3518";
+
+		/* Interrupt && Irq-gpio */
+		interrupt-parent = <&tlmm>;
+		interrupts = <22 0x2002>;
+
+		/* Power Config */
+		enable2v8_gpio = <&tlmm 102 0x1>;
+		vcc_1v8-supply = <&L13A>;
+		vdd_2v8_volt = <3008000>;
+
+		/* Interrupt && Irq-gpio */
+                /* Other HW Resource */
+		irq-gpio = <&tlmm 22 0x2002>;
+		reset-gpio = <&tlmm 21 0x1>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&ts_int_active &ts_reset_active>;
+
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <16 34>;
+		touchpanel,panel-coords = <1080 2400>;
+		touchpanel,display-coords = <1080 2400>;
+		touchpanel,touchmajor-limit = <0 54>;
+		touchpanel,smooth-level = <255 2 15 25 45 60>;
+		touchpanel,sensitive-level = <255 20 14 10 6 0>;
+		project_id = <21220>;
+		panel_type = <8>;
+		tp_type = <8>;
+		firmware_name = "focalt_";
+		platform_support_project = <21220 21221 21223>;
+		platform_support_project_dir = <21221 21221 21221>;
+		platform_support_project_commandline = "default_commandline","default_commandline","default_commandline";
+		/* SW Support Feature Control */
+		black_gesture_support;
+		fw_edge_limit_support;
+		pressure_report_support;
+		charger_pump_support;
+		game_switch_support;
+		smart_gesture_support;
+		fw_update_app_support;
+		fingerprint_underscreen_support;
+		headset_pump_support;
+		//esd_handle_support;
+		new_set_irq_wake_support;
+		irq_need_dev_resume_ok;
+		/*
+		*Virtual Key Config:
+		*1:touchpanel,button-type: <virtualkey_type  supportted_button-map>
+		*virtualkey_type:
+		*Type 1: using board_properties
+		*Type 2: using same IC (button zone&& touch zone are seprate)
+		*Type 3: using diffrent IC (button zone&& touch zone are seprate)
+		*Type 4: No need of virtual key process
+		*supportted_button-map:select|menu|home|back
+		*
+		*2:touchpanel,button-map
+		*type (X1,Y1)(X2,Y2)(X3,Y3)(Width_X,Hight_Y)--Only when button-type is 0
+		*/
+		touchpanel,button-type = <4>;
+		touchpanel.button-TRx = <0 0>;
+	};
+};

@@ -1,0 +1,13 @@
+/dts-v1/;
+
+#include "../qcom/blair.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair SoC";
+	compatible = "qcom,blair";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0 0>;
+};
+//#include "holi-luigi-overlay-common.dtsi"
+//#include "camera/holi-camera-sensor-qrd.dtsi"
+//#include "camera/wl2868c.dtsi"
