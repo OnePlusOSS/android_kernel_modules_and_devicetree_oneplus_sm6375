@@ -1,0 +1,57 @@
+/****modify voltage for pm8008*****/
+&L1P {
+	regulator-min-microvolt = <528000>;
+	regulator-max-microvolt = <1240000>;
+	qcom,min-dropout-voltage = <120000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L2P {
+	regulator-min-microvolt = <528000>;
+	regulator-max-microvolt = <1240000>;
+	qcom,min-dropout-voltage = <120000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L3P {
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,min-dropout-voltage = <200000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L4P {
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,min-dropout-voltage = <200000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L5P {
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,min-dropout-voltage = <300000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L6P {
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,min-dropout-voltage = <300000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+
+&L7P {
+	regulator-min-microvolt = <1500000>;
+	regulator-max-microvolt = <3400000>;
+	qcom,min-dropout-voltage = <300000>;
+	qcom,hpm-min-load = <0>;
+	//regulator-always-on;
+};
+/****modify voltage for pm8008*****/

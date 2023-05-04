@@ -1,0 +1,261 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include "odin-mtp-overlay.dtsi"
+//#ifdef OPLUS_FEATRUE_ESIM
+#include "esim/odin-21227-esim.dtsi"
+//#endif /* OPLUS_FEATRUE_ESIM */
+
+
+/* DTBO: project Special overlay */
+
+/ {
+	model = "Qualcomm Technologies, Inc. Holi MTP";
+	compatible = "qcom,holi-mtp", "qcom,holi", "qcom,mtp";
+	qcom,msm-id = <454 0x10000>, <472 0x10000>;
+	qcom,board-id = <8 0>;
+	oplus,dtsi_no = <21227>;
+};
+
+#include "camera/odin-21227-camera-sensor-mtp.dtsi"
+#include "nfc/odin-20281-nfc-mtp.dtsi"
+
+#include "sensor/odin-21227-sensor-mtp.dtsi"
+
+&pm7250b_charger {
+	/delete-property/ qcom,dual_charger_support;
+	qcom,hvdcp-disable;
+
+	qcom,usb-icl-ua = <2000000>;
+	qcom,fcc-max-ua = <3500000>;
+	qcom,chg-term-current-ma = <(-320)>;
+
+	qcom,input_current_charger_ma = <2000>;
+	qcom,pd_input_current_charger_ma = <2000>;
+	qcom,qc_input_current_charger_ma = <2000>;
+	qcom,input_current_usb_ma = <500>;
+	qcom,input_current_led_ma = <1200>;
+	qcom,input_current_camera_ma = <1200>;
+	qcom,input_current_cdp_ma = <1500>;
+	qcom,input_current_calling_ma = <1200>;
+
+	qcom,led_warm_bat_decidegc = <340>;	/* 34C ~ 37C */
+	qcom,led_high_bat_decidegc = <370>;	/* > 37C */
+	qcom,input_current_led_ma_normal = <2000>;	/* <= 34C */
+	qcom,input_current_led_ma_warm = <1500>;	/* 34C ~ 37C */
+	qcom,input_current_led_ma_high = <1200>;	/* > 37C */
+
+	qcom,iterm_ma = <260>; 			/* 0.05C + 10mA */
+	qcom,recharge-mv = <100>;
+	qcom,batt_capacity_mah = <4000>;	/* rated capacity */
+
+	qcom,removed_bat_decidegc = <400>;	/* < -40C */
+
+	qcom,cold_bat_decidegc = <20>;		/* -2C ~ 0C */
+	qcom,temp_cold_vfloat_mv = <3980>;
+	qcom,temp_cold_fastchg_current_ma = <350>;
+
+	qcom,little_cold_bat_decidegc = <0>;	/* 0C ~ 5C */
+	qcom,temp_little_cold_vfloat_mv = <4385>;
+	qcom,temp_little_cold_fastchg_current_ma = <550>;
+	qcom,temp_little_cold_fastchg_current_ma_high = <550>;
+	qcom,temp_little_cold_fastchg_current_ma_low = <550>;
+	qcom,qc_temp_little_cold_fastchg_current_ma_high = <550>;
+	qcom,qc_temp_little_cold_fastchg_current_ma_low = <550>;
+	qcom,pd_temp_little_cold_fastchg_current_ma_high = <550>;
+	qcom,pd_temp_little_cold_fastchg_current_ma_low = <550>;
+
+	qcom,cool_bat_decidegc = <50>;		/* 5C~12C */
+	qcom,temp_cool_vfloat_mv = <4385>;
+	qcom,temp_cool_fastchg_current_ma_high = <1100>;
+	qcom,temp_cool_fastchg_current_ma_low = <550>;
+	qcom,qc_temp_cool_fastchg_current_ma_high = <1100>;
+	qcom,qc_temp_cool_fastchg_current_ma_low = <550>;
+	qcom,pd_temp_cool_fastchg_current_ma_high = <1100>;
+	qcom,pd_temp_cool_fastchg_current_ma_low = <550>;
+
+	qcom,little_cool_bat_decidegc = <120>;	/* 12C ~ 16C */
+	qcom,temp_little_cool_vfloat_mv = <4385>;
+	qcom,temp_little_cool_fastchg_current_ma = <1650>;
+	qcom,temp_little_cool_fastchg_current_ma_high = <1650>;
+	qcom,temp_little_cool_fastchg_current_ma_low = <1650>;
+	qcom,qc_temp_little_cool_fastchg_current_ma_high = <1650>;
+	qcom,qc_temp_little_cool_fastchg_current_ma_low = <1650>;
+	qcom,pd_temp_little_cool_fastchg_current_ma = <1650>;
+
+	qcom,normal_bat_decidegc = <160>;	/* 16C ~ 45C */
+	qcom,temp_normal_vfloat_mv = <4385>;
+	qcom,temp_normal_fastchg_current_ma = <2400>;
+	qcom,pd_temp_normal_fastchg_current_ma = <2400>;
+	qcom,qc_temp_normal_fastchg_current_ma = <2400>;
+
+	qcom,normal_phase1_bat_decidegc = <160>;       /* 16C ~ 22C */
+	qcom,temp_normal_phase1_vfloat_mv = <4385>;
+	qcom,temp_normal_phase1_fastchg_current_ma = <2350>;
+
+	qcom,normal_phase2_bat_decidegc = <220>;       /* 22C ~ 34C */
+	qcom,temp_normal_phase2_vfloat_mv = <4385>;
+	qcom,temp_normal_phase2_fastchg_current_ma_high = <3200>;
+	qcom,temp_normal_phase2_fastchg_current_ma_low = <2500>;
+
+	qcom,normal_phase3_bat_decidegc = <320>;       /* 34 ~ 37C */
+	qcom,temp_normal_phase3_vfloat_mv = <4385>;
+	qcom,temp_normal_phase3_fastchg_current_ma_high = <3000>;
+	qcom,temp_normal_phase3_fastchg_current_ma_low = <2350>;
+
+	qcom,normal_phase4_bat_decidegc = <370>;       /* 37C ~ 40C */
+	qcom,temp_normal_phase4_vfloat_mv = <4385>;
+	qcom,temp_normal_phase4_fastchg_current_ma_high = <2800>;
+	qcom,temp_normal_phase4_fastchg_current_ma_low = <2350>;
+
+	qcom,normal_phase5_bat_decidegc = <400>;       /* 40C ~ 42C */
+	qcom,temp_normal_phase5_vfloat_mv = <4385>;
+	qcom,temp_normal_phase5_fastchg_current_ma = <2150>;
+
+	qcom,normal_phase6_bat_decidegc = <420>;       /* 42C ~ 45C */
+	qcom,temp_normal_phase6_vfloat_mv = <4385>;
+	qcom,temp_normal_phase6_fastchg_current_ma = <1140>;
+
+	qcom,warm_bat_decidegc = <440>;		/* 45C ~ 53C */
+	qcom,temp_warm_vfloat_mv = <4130>;
+	qcom,temp_warm_fastchg_current_ma = <1100>;
+	qcom,temp_warm_fastchg_current_ma_led_on = <500>;
+	qcom,qc_temp_warm_fastchg_current_ma = <1100>;
+	qcom,pd_temp_warm_fastchg_current_ma = <1100>;
+
+	qcom,hot_bat_decidegc = <530>;
+
+	qcom,non_standard_vfloat_mv = <3980>;
+	qcom,non_standard_fastchg_current_ma = <512>;
+	qcom,short_c_bat_cv_mv = <4330>;
+	qcom,short_c_bat_vfloat_mv = <3800>;
+	qcom,short_c_bat_fastchg_current_ma = <512>;
+
+	qcom,cold_vfloat_sw_limit = <3930>;
+	qcom,little_cold_vfloat_sw_limit = <4335>;
+	qcom,cool_vfloat_sw_limit = <4335>;
+	qcom,little_cool_vfloat_sw_limit = <4335>;
+	qcom,normal_vfloat_sw_limit = <4335>;
+	qcom,warm_vfloat_sw_limit = <4080>;
+	qcom,non_standard_vfloat_sw_limit = <3930>;
+	qcom,short_c_bat_vfloat_sw_limit = <3750>;
+
+	qcom,max_chg_time_sec = <36000>;
+	qcom,charger_hv_thr = <5900>;
+	qcom,charger_recv_thr = <5500>;
+	qcom,charger_lv_thr = <3400>;
+	qcom,vbatt_full_thr = <4400>;
+	qcom,vbatt_hv_thr = <4550>;
+	qcom,vfloat_step_mv = <10>;
+
+	qcom,non_standard_vfloat_over_sw_limit = <3990>;
+	qcom,cold_vfloat_over_sw_limit = <3990>;
+	qcom,little_cold_vfloat_over_sw_limit = <4395>;
+	qcom,cool_vfloat_over_sw_limit = <4395>;
+	qcom,little_cool_vfloat_over_sw_limit = <4395>;
+	qcom,normal_vfloat_over_sw_limit = <4395>;
+	qcom,warm_vfloat_over_sw_limit = <4140>;
+
+	qcom,vbatt_power_off = <3300>;
+	qcom,vbatt_soc_1 = <3410>;
+	qcom,vbatt_num = <1>;
+
+	qcom,normal_vterm_hw_inc = <18>;
+	qcom,non_normal_vterm_hw_inc = <18>;
+
+	qcom,default_iterm_ma = <260>;
+	qcom,default_temp_normal_fastchg_current_ma = <2400>;
+	qcom,default_normal_vfloat_sw_limit = <4335>;
+	qcom,default_temp_normal_vfloat_mv = <4385>;
+	qcom,default_normal_vfloat_over_sw_limit = <4395>;
+};
+
+&smb1355 {
+	status = "disabled";
+};
+
+&smb1355_charger {
+        status = "disabled";
+};
+
+&mtp_batterydata {
+	#include "oplus_battery_4000mah_100k_pm7250b_TWS_Atl.dtsi"
+	/delete-node/ qcom,4583298_OPLUS_Soda_Coslight_5000mAH_PMI632;
+	/delete-node/ qcom,4577054_OPLUS_Soda_tws_5000mAH_PMI632;
+	/delete-node/ qcom,4585572_OPLUS_Soda_5000mAH_PMI632;
+};
+
+&pm7250b_adc_tm {
+	/delete-node/ conn_therm;
+};
+
+&qusb_phy0{
+	qcom,qusb-phy-init-seq =
+		/* <value reg_offset> */
+		<0x23 0x210 /* PWR_CTRL1 */
+		0x03 0x04  /* PLL_ANALOG_CONTROLS_TWO */
+		0x7c 0x18c /* PLL_CLOCK_INVERTERS */
+		0x80 0x2c  /* PLL_CMODE */
+		0x0a 0x184 /* PLL_LOCK_DELAY */
+		0x19 0xb4  /* PLL_DIGITAL_TIMERS_TWO */
+		0x40 0x194 /* PLL_BIAS_CONTROL_1 */
+		0x15 0x198 /* PLL_BIAS_CONTROL_2 */
+		0x21 0x214 /* PWR_CTRL2 */
+		0x08 0x220 /* IMP_CTRL1 */
+		0x58 0x224 /* IMP_CTRL2 */
+		0x57 0x240 /* TUNE1 */
+		0x29 0x244 /* TUNE2 */
+		0xca 0x248 /* TUNE3 */
+		0x04 0x24c /* TUNE4 */
+		0x03 0x250 /* TUNE5 */
+		0x30 0x23c /* CHG_CTRL2 */
+		0x22 0x210>; /* PWR_CTRL1 */
+
+	qcom,qusb-phy-host-init-seq =
+		/* <value reg_offset> */
+		<0x23 0x210 /* PWR_CTRL1 */
+		0x03 0x04  /* PLL_ANALOG_CONTROLS_TWO */
+		0x7c 0x18c /* PLL_CLOCK_INVERTERS */
+		0x80 0x2c  /* PLL_CMODE */
+		0x0a 0x184 /* PLL_LOCK_DELAY */
+		0x19 0xb4  /* PLL_DIGITAL_TIMERS_TWO */
+		0x40 0x194 /* PLL_BIAS_CONTROL_1 */
+		0x17 0x198 /* PLL_BIAS_CONTROL_2 */
+		0x21 0x214 /* PWR_CTRL2 */
+		0x08 0x220 /* IMP_CTRL1 */
+		0x58 0x224 /* IMP_CTRL2 */
+		0x77 0x240 /* TUNE1 */
+		0x2b 0x244 /* TUNE2 */
+		0xca 0x248 /* TUNE3 */
+		0x04 0x24c /* TUNE4 */
+		0x03 0x250 /* TUNE5 */
+		0x30 0x23c /* CHG_CTRL2 */
+		0x22 0x210>; /* PWR_CTRL1 */
+};
+
+/ {
+	reserved-memory {
+		kboot_uboot_logmem: kboot_uboot_logmem@0x9FE00000 {
+			reg = <0x0 0x9FE00000 0x0 0x200000>;
+			compatible = "oplus,xbl_uefi_kbootlog";
+			xbluefi-offset = <0x1F7000>;
+			no-map;
+		};
+		//#if IS_ENABLED(CONFIG_OPLUS_FEATURE_DUMP_DEVICE_INFO)
+        ramoops: ramoops@0xE9700000 {
+            compatible = "ramoops";
+            reg = <0x0 0xE9700000 0x0 0x600000>;
+            //pmsg-size = <0x200000>;
+            record-size =  <0x40000>; //256k
+            console-size = <0x40000>; //256k
+            ftrace-size =  <0x100000>; //1M
+            pmsg-size=     <0x100000>; //1M
+            devinfo-size=  <0x8000>;  //32k
+		    ecc-size     = <0x0>;
+            mem-type = <2>;
+        };
+	};
+};
+
+//#endif

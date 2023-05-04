@@ -1,0 +1,18 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/interrupt-controller/arm-gic.h>
+#include "apollob-mtp-overlay.dtsi"
+
+
+/* DTBO: project Special overlay */
+
+/ {
+	model = "Qualcomm Technologies, Inc. Holi MTP";
+	compatible = "qcom,holi-mtp", "qcom,holi", "qcom,mtp";
+	qcom,msm-id = <454 0x10000>, <472 0x10000>;
+	qcom,board-id = <8 0>;
+	oplus,dtsi_no = <20609>;
+};
+
+#include "camera/apollob-20609-camera-sensor-mtp.dtsi"
