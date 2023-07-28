@@ -734,9 +734,9 @@
         touchpanel,panel-coords = <4320 9600>;
         touchpanel,display-coords = <1080 2400>;
         touchpanel,touchmajor-limit = <0 54>;
-        touchpanel,smooth-level = <0 110 115 120 140 155>;
-        touchpanel,smooth-level-charging = <0 100 110 115 120 140>;
-        touchpanel,sensitive-level = <0 20 17 15 13 10>;
+        touchpanel,smooth-level = <255 0 96 192 223 254>;
+        touchpanel,smooth-level-charging = <255 0 96 192 223 254>;
+        touchpanel,sensitive-level = <255 20 15 10 6 3>;
         touchpanel,single-optimized-time = <8>;
 
         platform_support_project = <22821 22872 22871 22873 22874>;
