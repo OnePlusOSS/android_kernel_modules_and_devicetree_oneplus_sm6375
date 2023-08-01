@@ -1,0 +1,978 @@
+#include "../qcom/blair-qrd-nopmi.dtsi"
+
+/* #ifdef OPLUS_ARCH_EXTENDS */
+#include "audio/blair-colombo-audio.dtsi"
+/* #endif OPLUS_ARCH_EXTENDS */
+/* DTBO: Platform common generic overlay */
+
+&reserved_memory {
+	//xbl_uefi_mem address get from: PcdEmbeddedFdBaseAddress +
+	//SERIAL_BUFFER_OFFSET = 0x9FC00000 + 0x3F7000 = 0x9FFF7000
+	//kernel boot log: 0x9FE00000~ 0x9FFF6FFF, xbl-uefi log: 0x9FFF7000 ~ 0x9FFFFFFF
+	kboot_uboot_logmem: kboot_uboot_logmem@0x9FE00000 {
+		reg = <0x0 0x9FE00000 0x0 0x200000>;
+		compatible = "oplus,xbl_uefi_kbootlog";
+		xbluefi-offset = <0x1F7000>;
+		no-map;
+	};
+
+	//#if IS_ENABLED(CONFIG_OPLUS_FEATURE_DUMP_DEVICE_INFO)
+	ramoops: ramoops@0xE9700000 {
+		compatible = "ramoops";
+		reg = <0x0 0xE9700000 0x0 0x600000>;  //6M
+		record-size  = <0x40000>; //256k
+		console-size = <0x40000>; //256k
+		ftrace-size  = <0x100000>; //1M
+		pmsg-size    = <0x100000>; //1M
+		devinfo-size = <0x8000>;  //32k
+		ecc-size     = <0x0>;
+	 };
+};
+
+&soc {
+	wl2868c:wl2868c {
+		compatible = "qualcomm,gpio_wl2868c";
+		pinctrl-names = "default", "wl2868c_gpio_enp0", "wl2868c_gpio_enp1";
+		pinctrl-0 = <&wl2868c_pins_default>;
+		pinctrl-1 = <&wl2868c_pins_enp0>;
+		pinctrl-2 = <&wl2868c_pins_enp1>;
+		//wl2868c,ldo5-always-on = <1>;
+		status = "okay";
+	};
+};
+
+&tlmm {
+	wl2868c_pins_enp1: wl2868c_pins_enp1 {
+		mux {
+			pins = "gpio58";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio58";
+			bias-pull-up;
+			output-low;
+			drive-strength = <2>;
+		};
+	};
+
+	wl2868c_pins_enp0: wl2868c_pins_enp0 {
+		mux {
+			pins = "gpio58";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio58";
+			bias-pull-up;
+			output-high;
+			drive-strength = <2>;
+		};
+	};
+
+	wl2868c_pins_default: wl2868c_pins_default {
+	};
+};
+
+&soc{
+	oplus_secure_common {
+		compatible = "oplus,secure_common";
+		oplus,sec_reg_num = <0x1B405D8>;
+		oplus,sec_en_anti_reg = <0x1B401CC>;
+		oplus,sec_override1_reg = <0x7860C0>;
+		oplus,override1_en_value = <0x1>;
+	};
+};
+
+&soc {
+/*#ifdef OPLUS_FEATURE_TP_BASIC*/
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+
+		pinctrl-names = "default";
+		pinctrl-1 = <&key_vol_down>;
+		/* using volume down config update the default value */
+
+		vol_up {
+                status="disabled";
+		};
+
+		vol_down {
+			label = "volume_down";
+			gpios = <&pmr735a_gpios 1 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpio-key,wakeup;
+			debounce-interval = <15>;
+			linux,can-disable;
+		};
+	};
+};
+
+&spmi_bus {
+	qcom,pm6125@0 {
+		qcom,power-on@800 {
+/*#ifdef OPLUS_FEATURE_TP_BASIC*/
+			qcom,pon_2 {
+					qcom,pon-type = <PON_POWER_ON_TYPE_RESIN>;
+					qcom,pull-up;
+					linux,code = <KEY_VOLUMEUP>;
+			};
+/*#endif OPLUS_FEATURE_TP_BASIC*/
+		};
+	};
+};
+
+&pmr735a_gpios {
+	key_vol_down {
+		key_vol_down: key_vol_down {
+			pins = "gpio1";
+			function = "normal";
+			input-enable;
+			bias-pull-up;
+			power-source = <1>;
+		};
+	};
+};
+
+/* #ifdef OPLUS_FEATURE_CAMERA_COMMON */
+//#include "camera/blair-camera-sensor-mtp.dtsi"
+/* #endif OPLUS_FEATURE_CAMERA_COMMON */
+
+&soc{
+
+    // #ifdef OPLUS_FEATURE_UFF_FINGERPRINT
+	fingerprint_dev {
+		status = "ok";
+		compatible = "oplus,fp_spi";
+		interrupt-parent = <&tlmm>;
+		interrupts = <17 0>;
+		power-mode = <1> ; /*0: power mode not set, 1: ldo power, 2: gpio power, 3: auto power */
+		ldo-supply = <&pm6125_l21>;
+		ldo-config = <3000000 3000000 150000>;
+		uff,gpio_irq = <&tlmm 17 0x1>;
+		uff,gpio_reset = <&tlmm 18 0x0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&fp_irq_gpio_default>,<&fp_reset_gpio_default>;
+		notify_tpinfo_flag = <1>;
+		power-num = <1>;
+		power_source_1 {
+			power-mode = <1>;
+			power-name = "ldo";
+			power-config = "ldo-config";
+			delay-time = <0>;
+		};
+	};
+	//#endif /*OPLUS_FEATURE_UFF_FINGERPRINT*/
+
+	//#ifdef OPLUS_FEATURE_THERMAL_HORAE
+	shell_front {
+		compatible = "oplus,shell-temp";
+	};
+
+	shell_frame {
+		compatible = "oplus,shell-temp";
+	};
+
+	shell_back {
+		compatible = "oplus,shell-temp";
+	};
+	//#endif /* OPLUS_FEATURE_THERMAL_HORAE */
+};
+&removed_mem {
+	no-map;
+	//reg = <0x0 0xc0000000 0x0 0x5100000>;
+	reg = <0x0 0xc0000000 0x0 0x7c00000>;
+};
+
+&qseecom_mem {
+	compatible = "shared-dma-pool";
+	alloc-ranges = <0x0 0x00000000 0x0 0xffffffff>;
+	reusable;
+	alignment = <0x0 0x400000>;
+	//size = <0x0 0x1400000>;
+	size = <0x0 0x5000000>;
+};
+
+//#ifdef OPLUS_FEATURE_TP_BASIC
+&soc {
+	devinfo {
+		status = "disabled";
+	};
+	oplus_devinfo {
+		compatible = "oplus-devinfo";
+
+		pinctrl-names = "default", "sleep", "active", "idle",
+				"gpio1_sleep", "gpio1_active", "gpio1_idle";
+		pinctrl-0 = <&hw_pins_default>;
+		pinctrl-1 = <&aboard_pin_gpio0_sleep>;
+		pinctrl-2 = <&aboard_pin_gpio0_active>;
+		pinctrl-3 = <&aboard_pin_gpio0_idle>;
+		pinctrl-4 = <&aboard_pin_gpio1_sleep>;
+		pinctrl-5 = <&aboard_pin_gpio1_active>;
+		pinctrl-6 = <&aboard_pin_gpio1_idle>;
+		main-sub {
+			use_double_tristate_gpio;
+			compatible = "hw-match, main-sub";
+			aboard-gpio0 = <&tlmm 90 0>;
+			aboard-patterns = <0 2 2>;	/*0[high-resistance] 1[pull-down] 2[pull-up]*/
+			/*main board*/
+			match-projects = <22045 22247 22248>;
+		};
+
+		main-sub-a2 {
+			use_double_tristate_gpio;
+			compatible = "hw-match, main-sub-a2";
+			aboard-gpio1 = <&tlmm 133 0>;
+			aboard-patterns = <1 0 1>;	/*0[high-resistance] 1[pull-down] 2[pull-up]*/
+			/*main board*/
+			match-projects = <22045 22247 22248>;
+		};
+	};
+
+	oplus_misc_healthinfo:oplus_misc_healthinfo {
+		status = "disabled";
+		compatible = "oplus,misc_healthinfo";
+		oplus_misc_healthinfo_support;
+	};
+
+    //#ifdef OPLUS_FEATURE_TP_BASIC
+	oplus_sim_detect {
+		compatible = "oplus, sim_detect";
+		Hw,sim_det = <&tlmm 82 0>;
+	};
+    //#endif /* OPLUS_FEATURE_TP_BASIC */
+};
+
+&tlmm {
+	/* add pingrp for touchscreen */
+	pmx_ts_int_active_oplus {
+		ts_int_active: ts_int_active {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <8>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	pmx_ts_int_suspend_oplus {
+		ts_int_suspend1: ts_int_suspend1 {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <8>;
+				//bias-pull-down;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
+
+	pmx_ts_reset_active_oplus {
+		ctp_ts_reset_poweron: ts_reset_active {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <8>;
+				output-low;
+				bias-disable;
+			};
+		};
+	};
+
+	pmx_ts_reset_suspend_oplus {
+		ctp_ts_reset_poweroff: ts_reset_suspend1 {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	// #ifdef OPLUS_FEATURE_UFF_FINGERPRINT
+	fingerprint_dev{
+		fp_irq_gpio_default: fp_irq_gpio_default {
+			mux {
+				pins = "gpio17";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio17";
+				drive-strength = <2>;
+				bias-disable;
+				input-enable;
+			};
+		};
+
+		fp_reset_gpio_default: fp_reset_gpio_default {
+			mux {
+				pins = "gpio18";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio18";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+	};
+	//#endif /*OPLUS_FEATURE_UFF_FINGERPRINT*/
+
+	//#ifdef OPLUS_FEATURE_TP_BASIC
+        aboard_pin {
+		hw_pins_default:hw_pins_default {
+		};
+
+		aboard_pin_gpio0_sleep:aboard_pin_gpio0_sleep {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_active:aboard_pin_gpio0_active {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_idle:aboard_pin_gpio0_idle {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				bias-disable;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio1_sleep:aboard_pin_gpio1_sleep {
+			mux {
+				pins = "gpio133";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio133";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio1_active:aboard_pin_gpio1_active {
+			mux {
+				pins = "gpio133";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio133";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio1_idle:aboard_pin_gpio1_idle {
+			mux {
+				pins = "gpio133";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio133";
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+	//#endif /*OPLUS_FEATURE_TP_BASIC*/
+};
+
+&qupv3_se0_spi {
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+	pinctrl-0 = <&qupv3_se0_spi_active &qupv3_se0_spi_cs_active>;
+	pinctrl-1 = <&qupv3_se0_spi_sleep &qupv3_se0_spi_cs_sleep>;
+};
+
+&qupv3_se0_i2c {
+    status = "disabled";
+};
+
+#include "colombo-22045-ili7807-tp.dtsi"
+#include "colombo-22045-nt36672c-tp.dtsi"
+&qupv3_se0_spi {
+    status = "ok";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+	novatek@0 {
+		compatible = "novatek,nf_nt36672c";
+		reg = <0x0>;
+		chip-name = "NF_NT36672C";
+		status = "ok";
+
+		spi-max-frequency = <15000000>;    /*4800000,9600000,12000000, 15000000,19200000*/
+
+		/* Interrupt && Irq-gpio */
+		interrupt-parent = <&tlmm>;
+		interrupts = <22 0x0>;
+		irq-gpio = <&tlmm 22 0x2002>;
+		reset-gpio = <&tlmm 21 0x00>;
+		cs-gpio = <&tlmm 3 0x00>;
+
+		/* Power Config */
+		enable2v8_gpio = <&tlmm 102 0x1>;
+		vcc_1v8-supply = <&L13A>;
+		//vdd_2v8_volt = <3300000>;
+
+		/* Other HW Resource */
+		pinctrl-names = "default", "pin_set_low", "pin_set_high";
+		pinctrl-0 = <&ts_int_active>;
+		pinctrl-1 = <&ctp_ts_reset_poweroff>;
+		pinctrl-2 = <&ctp_ts_reset_poweron>;
+
+		project_id = <22045>;
+		tp_type = <7>;  /*TM*/
+		touchpanel,tp-index = <0>;
+		panel_type = <7>;
+		firmware_name = "0xAC065TNA1";
+
+		touchpanel,irq_need_dev_resume_time = <500>;
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <16 36>;
+		touchpanel,panel-coords = <4320 9600>;
+		touchpanel,display-coords = <1080 2400>;
+		touchpanel,touchmajor-limit = <0 54>;
+		touchpanel,smooth-level = <0 110 115 120 140 155>;
+		touchpanel,smooth-level-charging = <0 100 110 115 120 140>;
+		touchpanel,sensitive-level = <0 20 17 15 13 10>;
+		touchpanel,single-optimized-time = <8>;
+
+		platform_support_project = <22045 22247 22248>;
+		platform_support_project_dir = <22045 22045 22045>;
+		platform_support_project_commandline = "default_commandline","default_commandline","default_commandline";
+
+		/* SW Support Feature Control */
+		incell_screen;
+		irq_need_dev_resume_ok;
+		fw_edge_limit_support;
+		black_gesture_support;
+		charger_pump_support;
+		esd_handle_support;
+		black_gesture_test_support;
+		noflash_support;
+		pressure_report_support;
+		fw_update_app_support;
+		game_switch_support;
+		lcd_trigger_load_tp_fw_support;
+		fw_update_in_probe_with_headfile;
+		//health_monitor_support;
+
+		touchpanel,button-type = <4>;
+		exception_upload_support;
+    };
+
+	ilitek@1 {
+		compatible = "ilitek,ili7807s";
+		reg = <0x1>; //Same as CS ID
+		chip-num = <1>;
+		chip-name = "NF_ILI7807S";
+		status = "ok";
+
+		spi-max-frequency = <12000000>;    //4800000,9600000,12000000,15000000,19200000
+		interrupt-parent = <&tlmm>;
+		interrupts = <22 0x0>;
+		irq-gpio = <&tlmm 22 0x2002>;
+		reset-gpio = <&tlmm 21 0x00>;
+		cs-gpio = <&tlmm 3 0x00>;
+
+		/* Power Config */
+		enable2v8_gpio = <&tlmm 102 0x1>;
+		vcc_1v8-supply = <&L13A>;
+//		vdd_2v8_volt = <3300000>;
+
+		/* Other HW Resource */
+		panel_type = <6>;
+		project_id = <22045>;
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <16 36>;
+		touchpanel,panel-coords = <4320 9600>;
+		touchpanel,display-coords = <1080 2400>;
+		touchpanel,touchmajor-limit = <0 216>;
+		touchpanel,button-type = <4>;
+		touchpanel.button-TRx = <0 0>;
+		touchpanel,irq_need_dev_resume_time = <500>;
+
+		tp_type = <6>;
+		platform_support_project = <22045 22247 22248>;
+		platform_support_project_dir = <22045 22045 22045>;
+		firmware_name = "0xAC065MI";
+		platform_support_project_commandline = "default_commandline","default_commandline","default_commandline";
+		pinctrl-names = "default", "pin_set_low", "pin_set_high";
+		pinctrl-0 = <&ts_int_active>;
+		pinctrl-1 = <&ctp_ts_reset_poweroff>;
+		pinctrl-2 = <&ctp_ts_reset_poweron>;
+
+		touchpanel,smooth-level = <255 5 4 3 2 1>;
+		touchpanel,sensitive-level = <255 1 2 3 4 5>;
+		touchpanel,single-optimized-time = <8>;
+
+		incell_screen;
+		fw_edge_limit_support;
+		black_gesture_support;
+		charger_pump_support;
+		//headset_pump_support;
+		esd_handle_support;
+		//spurious_fingerprint_support;
+		//lcd_trigger_fp_check;
+		black_gesture_test_support;
+		noflash_support;
+		smart_gesture_support;
+		fw_update_app_support;
+		game_switch_support;
+		pressure_report_support;
+		new_set_irq_wake_support;
+		lcd_trigger_load_tp_fw_support;
+		//fw_update_in_probe_with_headfile;
+		//health_monitor_support;
+		exception_upload_support;
+	};
+};
+
+&tlmm {
+	qupv3_se0_spi_pins: qupv3_se0_spi_pins {
+		qupv3_se0_spi_active: qupv3_se0_spi_active {
+			mux {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				function = "qup00";
+			};
+
+			config {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				drive-strength = <4>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se0_spi_sleep: qupv3_se0_spi_sleep {
+			mux {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				drive-strength = <4>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se0_spi_cs_active: qupv3_se0_spi_cs_active {
+			mux {
+				pins = "gpio3";
+				function = "qup00";
+			};
+
+			config {
+				pins ="gpio3";
+				drive-strength = <4>;
+				bias-disable;
+			};
+		};
+		qupv3_se0_spi_cs_sleep: qupv3_se0_spi_cs_sleep {
+			mux {
+				pins = "gpio3";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <4>;
+				bias-pull-down;
+			};
+		};
+	};
+//#endif /*OPLUS_FEATURE_TP_BASIC*/
+};
+
+&qupv3_se10_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+
+	lcd_bias_i2c@3e {
+		compatible = "qualcomm,i2c_lcd_bias";
+		reg = <0x3e>;
+		qualcomm,enp = <&tlmm 101 0x0>;
+		qualcomm,enn = <&tlmm 102 0x0>;
+		status = "okay";
+	};
+
+	i2c_wl2868c@2f{
+		compatible = "qualcomm,i2c_wl2868c";
+		reg = <0x2f>;
+		status = "okay";
+	};
+
+	aw2023@45 {
+		status = "disabled";
+		compatible = "awinic,aw2023_led";
+		reg = <0x45>;
+		vcc-supply = <&L9A>;
+
+		aw2023,red {
+			aw2023,name = "red";
+			aw2023,id = <0>;
+			aw2023,imax = <1>;
+			aw2023,led_default_trigger = "none";
+			aw2023,brightness = <3>;
+			aw2023,max-brightness = <15>;
+			aw2023,rise-time-ms = <6>;
+			aw2023,hold-time-ms = <0>;
+			aw2023,fall-time-ms = <6>;
+			aw2023,off-time-ms = <4>;
+		};
+
+		aw2023,green {
+			aw2023,name = "green";
+			aw2023,id = <1>;
+			aw2023,imax = <1>;
+			aw2023,led_default_trigger = "none";
+			aw2023,brightness = <3>;
+			aw2023,max-brightness = <15>;
+			aw2023,rise-time-ms = <6>;
+			aw2023,hold-time-ms = <0>;
+			aw2023,fall-time-ms = <6>;
+			aw2023,off-time-ms = <4>;
+		};
+
+		aw2023,blue {
+			aw2023,name = "blue";
+			aw2023,id = <2>;
+			aw2023,imax = <1>;
+			aw2023,led_default_trigger = "none";
+			aw2023,brightness = <3>;
+			aw2023,max-brightness = <15>;
+			aw2023,rise-time-ms = <6>;
+			aw2023,hold-time-ms = <0>;
+			aw2023,fall-time-ms = <6>;
+			aw2023,off-time-ms = <4>;
+		};
+	};
+};
+
+&tlmm {
+	//Liu.Xu 2021/0926 add for disable wake-up function of NC-GPIO
+	gpio_wakeup: gpio_wakeup {
+		compatible = "gpio_wakeup";
+		gpio_table = <2 3 6 12 33 38 56 57 88 90 91 92 99 102 108 113 114 115 116
+                              7 8 9 48 51 59 84 85 86 107 117 118 152 153 154 155>;
+	};
+};
+
+//Wei.Tang 2021/09/23 modify for rf_cable
+&tlmm {
+	rf_cable0_active: rf_cable0_active {
+		mux {
+			pins = "gpio24";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio24";
+			drive-strength = <2>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+};
+
+&soc {
+	oplus_rf_cable {
+		compatible = "oplus,rf_cable";
+		interrupt-parent = <&tlmm>;
+		rf_cable_support_num = <1>;
+		rf,cable0-gpio = <&tlmm 24 0>;
+		rf,cable-support-timer = <0>;
+		pinctrl-names = "rf_cable_active";
+		pinctrl-0 = <&rf_cable0_active>;
+	};
+};
+
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "charge/oplus_charge_colombo.dtsi"
+//#endif
+
+&tlmm {
+	/* blair_reserved_gpios[] = {13, 14, 15, 16, 48, 56, 57, -1}; */
+	gpios = /bits/ 16 <
+			0 1 2 3 4 5 6 7 8 9
+			10 11 12             17 18 19
+			20 21 22 23 24 25 26 27 28 29
+			30 31 32 33 34 35 36 37 38 39
+			40 41 42 43 44 45 46 47    49
+			50 51 52 53 54 55 56 57 58 59
+			60 61 62 63 64 65 66 67 68 69
+			70 71 72 73 74 75 76 77 78 79
+			80 81 82 83 84 85 86 87 88 89
+			90 91 92 93 94 95 96 97 98 99
+			100 101 102 103 104 105 106 107 108 109
+			110 111 112 113 114 115 116 117 118 119
+			120 121 122 123 124 125 126 127 128 129
+			130 131 132 133 134 135 136 137 138 139
+			140 141 142 143 144 145 146 147 148 149
+			150 151 152 153 154 155 156
+			>;
+};
+
+//#ifdef OPLUS_TEMP_NTC
+&thermal_zones {
+	quiet-therm-step {
+		disable-thermal-zone;
+	};
+
+	xo-therm-step {
+		polling-delay-passive = <2000>;
+		polling-delay = <0>;
+		thermal-governor = "step_wise";
+		thermal-sensors = <&pm6125_adc_tm ADC5_XO_THERM_100K_PU>;
+
+		trips {
+			xo_gold_trip: xo-gold-trip {
+				temperature = <48000>;
+				hysteresis = <0>;
+				type = "passive";
+			};
+
+			xo_gpu_trip: xo-gpu-trip {
+				temperature = <48000>;
+				hysteresis = <0>;
+				type = "passive";
+			};
+
+			xo_silver_trip: xo-silver-trip {
+				temperature = <50000>;
+				hysteresis = <0>;
+				type = "passive";
+			};
+
+			xo_cx_trip: xo-cx-trip {
+				temperature = <55000>;
+				hysteresis = <5000>;
+				type = "passive";
+			};
+		};
+
+		cooling-maps {
+			cdsp-cdev {
+				trip = <&xo_cx_trip>;
+				cooling-device = <&cdsp_sw 4 4>;
+			};
+
+			gpu-cdev0 {
+				trip = <&xo_gpu_trip>;
+				/* throttle to 650000000Hz */
+				cooling-device = <&msm_gpu THERMAL_NO_LIMIT
+							(THERMAL_MAX_LIMIT-3)>;
+			};
+
+			gpu-cdev1 {
+				trip = <&xo_cx_trip>;
+				/* throttle to 390000000Hz */
+				cooling-device = <&msm_gpu (THERMAL_MAX_LIMIT-1)
+							(THERMAL_MAX_LIMIT-1)>;
+			};
+
+			silver-cdev {
+				trip = <&xo_silver_trip>;
+				/* throttle to 1516800KHz */
+				cooling-device = <&CPU0 THERMAL_NO_LIMIT
+							(THERMAL_MAX_LIMIT-6)>;
+			};
+
+			gold-cdev {
+				trip = <&xo_gold_trip>;
+				/* throttle to 2054400KHz */
+				cooling-device = <&CPU6 THERMAL_NO_LIMIT
+							(THERMAL_MAX_LIMIT-8)>;
+			};
+		};
+	};
+};
+
+
+&tlmm {
+	lcd_bias_gpio_enp_1: lcd_bias_gpio_enp_1 {
+		mux {
+			pins = "gpio101";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio101";
+			drive-strength = <8>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+
+	lcd_bias_gpio_enp_0: lcd_bias_gpio_enp_0 {
+		mux {
+			pins = "gpio101";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio101";
+			drive-strength = <2>;
+			output-low;
+			bias-pull-down;
+		};
+	};
+
+	lcd_bias_gpio_enn_1: lcd_bias_gpio_enn_1 {
+		mux {
+			pins = "gpio102";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio102";
+			drive-strength = <8>;
+			output-high;
+			bias-pull-up;
+		};
+	};
+
+	lcd_bias_gpio_enn_0: lcd_bias_gpio_enn_0 {
+		mux {
+			pins = "gpio102";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio102";
+			drive-strength = <2>;
+			output-low;
+			bias-pull-down;
+		};
+	};
+};
+
+&soc {
+	lcd_client {
+		compatible = "qualcomm,gpio_lcd_bias";
+		pinctrl-names = "lcd_bias_gpio_enp0","lcd_bias_gpio_enp1","lcd_bias_gpio_enn0","lcd_bias_gpio_enn1";
+		pinctrl-0 = <&lcd_bias_gpio_enp_0>;
+		pinctrl-1 = <&lcd_bias_gpio_enp_1>;
+		pinctrl-2 = <&lcd_bias_gpio_enn_0>;
+		pinctrl-3 = <&lcd_bias_gpio_enn_1>;
+		status = "okay";
+	};
+};
+&sde_dsi {
+	vddio-supply = <&L13A>;
+};
+
+&soc {
+    //#ifdef OPLUS_FEATURE_WIFI_SMART_ANTENNA
+    oplus_wsa:oplus,wlan-wsa {
+        compatible = "oplus,wlan-wsa";
+        wlan-wsa-gpio = <&tlmm 114 0>;
+        pinctrl-names = "default", "cnss_wlan_wsa_high", "cnss_wlan_wsa_low";
+        pinctrl-0 = <&cnss_wlan_wsa_default>;
+        pinctrl-1 = <&cnss_wlan_wsa_high>;
+        pinctrl-2 = <&cnss_wlan_wsa_low>;
+        status = "okay";
+    };
+    //#endif
+};
+
+//#ifdef OPLUS_FEATURE_WIFI_SMART_ANTENNA
+&tlmm {
+   cnss_wlan_wsa_default: cnss_wlan_wsa_default {
+       mux {
+           pins = "gpio114";
+           function = "gpio";
+       };
+
+       config {
+           pins = "gpio114";
+           drive-strength = <2>;
+           output-high;
+           bias-pull-up;
+       };
+   };
+
+   cnss_wlan_wsa_high: cnss_wlan_wsa_high {
+       mux {
+           pins = "gpio114";
+           function = "gpio";
+       };
+
+       config {
+           pins = "gpio114";
+           drive-strength = <2>;
+           output-high;
+           bias-pull-up;
+       };
+   };
+
+   cnss_wlan_wsa_low: cnss_wlan_wsa_low {
+       mux {
+           pins = "gpio114";
+           function = "gpio";
+       };
+
+       config {
+           pins = "gpio114";
+           drive-strength = <2>;
+           output-low;
+           bias-pull-up;
+       };
+   };
+};
+//#endif
+//#endif

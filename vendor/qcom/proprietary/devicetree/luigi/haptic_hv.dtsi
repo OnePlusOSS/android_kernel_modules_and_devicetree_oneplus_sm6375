@@ -1,0 +1,33 @@
+/***************** AWINIC High Voltage Haptic Driver ****************/
+&qupv3_se8_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+ 	aw8697_haptic@5A {
+ 		compatible = "awinic,aw8697_haptic";
+ 		reg = <0x5A>;
+ 		reset-gpio = <&tlmm 86 0>;
+ 		irq-gpio = <&tlmm 90 0>;
+		status = "disabled";
+ 		qcom,device_id = <815>;//22667-170hz
+                oplus,aw86927_boost_voltage = /bits/ 8 <0x55>;
+ 		pinctrl-names = "default";
+ 		pinctrl-0 = <&aw_irq_gpio_default>;
+ 	};
+};
+
+&tlmm {
+	aw_irq_gpio_default: aw_irq_gpio_default {
+		mux {
+			 pins = "gpio90";
+			 function = "gpio";
+		};
+
+		config {
+			pins = "gpio90";
+			drive-strength = <2>;
+			bias-pull-up;
+			input-enable;
+		};
+	};
+};
+/************************** AWINIC END *****************************/

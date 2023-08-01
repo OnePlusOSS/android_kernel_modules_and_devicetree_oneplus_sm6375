@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-colombo-overlay-common.dtsi"
+#include "blair-colombo-22045-overlay.dtsi"
+#include "sensor/colombo-22045-sensor-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <22045>;
+};
+
+#include "camera/blair-22045-camera-sensor-mtp.dtsi"

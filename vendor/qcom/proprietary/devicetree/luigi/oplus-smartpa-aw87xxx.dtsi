@@ -1,0 +1,49 @@
+/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+&qupv3_se10_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+/*stereo dtsi config*/
+/* AWINIC AW87XXX Smart K PA */
+	aw87xxx_pa@59 {
+		compatible = "awinic,aw87xxx_pa";
+		reg = <0x59>;
+		oplus-real-addr = <0x58>;
+		dev_index = < 0 >;
+		aw-rx-topo-id = <0x1000ff00>;
+		aw-rx-port-id = <0xB030>;
+		status = "okay";
+	};
+
+	aw87xxx_pa@5b {
+		compatible = "awinic,aw87xxx_pa";
+		reg = <0x5b>;
+		oplus-real-addr = <0x5a>;
+		dev_index = < 1 >;
+		aw-rx-topo-id = <0x1000ff00>;
+		aw-rx-port-id = <0xB030>;
+		status = "okay";
+	};
+/* AWINIC AW87XXX Smart K PA End */
+};
+

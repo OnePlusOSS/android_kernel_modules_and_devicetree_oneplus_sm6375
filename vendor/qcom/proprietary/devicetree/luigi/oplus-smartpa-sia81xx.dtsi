@@ -1,0 +1,121 @@
+/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+/* Copyright (c) 2018, The Linux Foundation. All rights reserved.
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License version 2 and
+ * only version 2 as published by the Free Software Foundation.
+ *
+ * This program is distributed in the hope that it will be useful,
+ * but WITHOUT ANY WARRANTY; without even the implied warranty of
+ * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ * GNU General Public License for more details.
+ */
+
+&tlmm {
+	sia81xx_gpio_L: sia81xx_gpio_L {
+		mux {
+			pins = "gpio33", "gpio33";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio33", "gpio33";
+			drive-strength = <6>;
+			bias-disable;
+		};
+	};
+	sia81xx_gpio_R: sia81xx_gpio_R {
+		mux {
+			pins = "gpio11", "gpio11";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio11", "gpio11";
+			drive-strength = <6>;
+			bias-disable;
+		};
+	};
+};
+
+&soc {
+	sia81xx_L: sia81xx@L {
+			compatible = "si,sia81xx";
+			si,sia81xx_type = "sia8152x";
+			si,sia81xx_reset = <&tlmm 33 0x00>;
+			si,sia81xx_owi = <&tlmm 33 0x00>;
+			pinctrl-names = "sia81xx_gpio";
+			pinctrl-0 = <&sia81xx_gpio_L>;
+
+			si,sia81xx_disable_pin = <1>;
+
+			/* the same value share a same task
+			 * valid value range : 0 ~ 7 */
+			timer_task_hdl = <0>;
+
+			channel_num = <0>;
+			owi_mode = <6>;
+			en_x_filter = <0>;
+			en_dynamic_updata_vdd = <1>;
+			en_dynamic_updata_pvdd = <0>;
+			dynamic_updata_vdd_port = <0xb030>;
+			algo_is_v2 = <1>;
+			si,sia_boost_vol_support = <1>;
+	};
+	
+	sia81xx_R: sia81xx@R {
+			compatible = "si,sia81xx";
+			si,sia81xx_type = "sia8152x";
+			si,sia81xx_reset = <&tlmm 11 0x00>;
+			si,sia81xx_owi = <&tlmm 11 0x00>;
+			pinctrl-names = "sia81xx_gpio";
+			pinctrl-0 = <&sia81xx_gpio_R>;
+			
+			si,sia81xx_disable_pin = <1>;
+			
+			/* the same value share a same task
+			 * valid value range : 0 ~ 7 */
+			timer_task_hdl = <0>;
+			
+			channel_num = <1>;
+			owi_mode = <6>;
+			en_x_filter = <0>;
+			en_dynamic_updata_vdd = <1>;
+			en_dynamic_updata_pvdd = <0>;
+			dynamic_updata_vdd_port = <0xb030>;
+			algo_is_v2 = <1>;
+			si,sia_boost_vol_support = <1>;
+	};
+};
+
+&holi_snd {
+		si,sia81xx-max-num = <2>;
+		si,sia81xx-aux-devs = <&sia81xx_L>, <&sia81xx_R>;
+		si,sia81xx-aux-devs-prefix = "SpkrMonoL", "SpkrMonoR";
+};
+
+&qupv3_se10_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	sia81xx_i2c_L: sia81xx_i2c@L {
+		compatible = "si,sia81xx-i2c";
+		reg = <0x58>;
+		si,sia81xx-dev = <&sia81xx_L>;
+	};
+	sia81xx_i2c_R: sia81xx_i2c@R {
+		compatible = "si,sia81xx-i2c";
+		reg = <0x5A>;
+		si,sia81xx-dev = <&sia81xx_R>;
+	};
+};
+

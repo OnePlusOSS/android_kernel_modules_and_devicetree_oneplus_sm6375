@@ -1,0 +1,208 @@
+/*
+ * Copyright (C) 2010 - 2021 Novatek, Inc.
+ *
+ * $Revision$
+ * $Date$
+ *
+ * This program is free software; you can redistribute it and/or modify
+ * it under the terms of the GNU General Public License as published by
+ * the Free Software Foundation; either version 2 of the License, or
+ * (at your option) any later version.
+ *
+ * This program is distributed in the hope that it will be useful, but WITHOUT
+ * ANY WARRANTY; without even the implied warranty of MERCHANTABILITY or
+ * FITNESS FOR A PARTICULAR PURPOSE.  See the GNU General Public License for
+ * more details.
+ *
+ */
+
+//baihang.Wang 2021/06/01 add for supporting tp-ic-78807s
+#include "tyr-ts-ili7807-fw.dtsi"
+&qupv3_se2_spi {
+       status = "disabled";
+       ilitek@1 {
+                compatible = "ilitek,ili7807s";
+                reg = <1>;
+                chip-num = <1>;
+                chip-name = "NF_ILI7807S";
+                status = "disabled";
+
+                spi-max-frequency = <15000000>;    //4800000,9600000,15000000,19200000
+                reset-gpio = <&tlmm 21 0x00>;
+                interrupt-parent = <&tlmm>;
+                interrupts = <22 0x0>;
+                irq-gpio = <&tlmm 22 0x2002>;
+                cs-gpio = <&tlmm 57 0x00>;
+
+                panel_type = <9>;
+                project_id = <21653>;
+                touchpanel,max-num-support = <10>;
+                touchpanel,tx-rx-num = <16 36>;
+                touchpanel,panel-coords = <4320 9648>;
+                touchpanel,display-coords = <1080 2412>;
+                touchpanel,touchmajor-limit = <0 216>;
+                touchpanel,button-type = <4>;
+                touchpanel.button-TRx = <0 0>;
+                tp_type = <9>;
+                platform_support_project = <21707 21708 21629 136747 136937 136938 21141 21341>;
+                platform_support_project_dir = <21707 21707 21707 21707 21707 21707 21707 21707>;
+                firmware_name = "AB258_DS_ILI001";
+                platform_support_project_commandline = "default_commandline","default_commandline","default_commandline","default_commandline","default_commandline","default_commandline", "default_commandline", "default_commandline";
+                pinctrl-names = "default", "pin_set_low", "pin_set_high";
+                pinctrl-0 = <&ts_int_active>;
+                /*pinctrl-1 = <&ts_int_suspend &ts_reset_suspend>;*/
+                pinctrl-1 = <&ctp_ts_reset_poweroff>;
+                pinctrl-2 = <&ctp_ts_reset_poweron>;
+
+
+				touchpanel,smooth-level = <255 5 4 3 2 1>;
+				//touchpanel,smooth-level-charging = <255 10 9 8 7 6>;
+                touchpanel,sensitive-level = <255 1 2 3 4 5>;
+                touchpanel,single-optimized-time = <8>;
+
+                incell_screen;
+                fw_edge_limit_support;
+                black_gesture_support;
+                charger_pump_support;
+                headset_pump_support;
+                esd_handle_support;
+                //spurious_fingerprint_support;
+                //lcd_trigger_fp_check;
+                black_gesture_test_support;
+                noflash_support;
+                smart_gesture_support;
+                fw_update_app_support;
+                game_switch_support;
+                pressure_report_support;
+                new_set_irq_wake_support;
+                lcd_trigger_load_tp_fw_support;
+                fw_update_in_probe_with_headfile;
+                health_monitor_support;
+        };
+};
+
+&qupv3_se0_spi {
+	status = "okay";
+	pinctrl-0 = <&qupv3_se0_spi_active>, <&ctp_ts_reset_poweroff>;
+	pinctrl-1 = <&qupv3_se0_spi_sleep>, <&qupv3_se0_spi_cs_high>, <&ctp_ts_reset_poweroff>;
+
+	nt36523@0 {
+		status = "okay";
+		compatible = "novatek,nf_nt36523";
+		reg = <0>;
+		chip-num = <1>;
+		chip-name = "NT36523";
+		project_id = <21653>;
+		spi-max-frequency = <12000000>; //4800000,9600000,15000000,19200000
+		interrupt-parent = <&tlmm>;
+		interrupts = <22 0x0>;
+		irq-gpio = <&tlmm 22 0x2002>;
+		// reset-gpio = <&tlmm 21 0x00>;
+		// cs-gpio = <&tlmm 3 0x00>;
+
+		touchpanel,max-num-support = <10>;
+		touchpanel,tx-rx-num = <32 48>;
+		touchpanel,panel-coords = <1200 2000>;
+		touchpanel,display-coords = <1200 2000>;
+		touchpanel,touchmajor-limit = <0 54>;
+
+		touchpanel,pen-tx-rx-num = <4 6>;
+		touchpanel,pen-panel-coords = <2400 4000>;
+		touchpanel,pen-max-pressure = <4096>;
+		touchpanel,pen-max-tilt = <60 60>;
+		touchpanel,msecs-to-jiffies-time = <100>;
+		touchpanel,panel-orientation = <0>; //0 90 180 270
+		touchpanel,tp-index = <0>;
+		panel_type = <3>;//BOE
+		tp_type = <3>;
+
+		platform_support_project = <21653 21654 21746 137034>; //137034_dec for 2174A_hex
+		platform_support_project_dir = <21653 21653 21653 21653>;
+		firmware_name = "AB434_BOE_NT00";
+		platform_support_project_commandline = "default_commandline";
+		vid_len = <7>;
+
+		pinctrl-names = "default", "pin_set_low", "pin_set_high";
+		pinctrl-0 = <&ts_int_active>;
+		pinctrl-1 = <&qupv3_se0_spi_cs_low>;
+		pinctrl-2 = <&qupv3_se0_spi_cs_high>;
+
+		touchpanel,irq_need_dev_resume_time = <500>;
+		//touchpanel,smooth-level = <255 5 4 3 2 1>;
+		//touchpanel,smooth-level-charging = <255 10 9 8 7 6>;
+		//touchpanel,sensitive-level = <255 1 2 3 4 5>;
+		//touchpanel,single-optimized-time = <8>;
+
+		incell_screen;
+		//iovcc_shutdown_support;
+		fw_edge_limit_support;
+		black_gesture_support;
+		charger_pump_support;
+		//headset_pump_support;
+		esd_handle_support;
+		black_gesture_test_support;
+		//game_switch_support;
+		noflash_support;
+		lcd_trigger_load_tp_fw_support;
+		pressure_report_support;
+		pen_support;
+		chip_type_cascade;   //added by nt36523
+		fw_update_app_support;
+		health_monitor_support;
+		fw_update_in_probe_with_headfile;
+		black_gesture_indep_support;
+		//touchpanel,button-type = <4>;
+		//touchpanel.button-TRx = <0 0>;
+
+		firmware-data-0 = /bits/ 8 <
+			#include "tyr-ts-nt36523-fw-PID5F7E.dtsi"
+		>;
+	};
+};
+
+&qupv3_se0_spi {
+	/* Novatek device tree node */
+	novatek@0 {
+		compatible = "novatek,NVT-ts-spi";
+		reg = <0>; //Same as CS ID
+		status = "disabled";
+
+		spi-max-frequency = <9600000>;	//4800000,9600000,15000000,19200000
+		novatek,reset-gpio = <&tlmm 21 0x00>;
+		novatek,irq-gpio = <&tlmm 22 0x2002>;
+
+		//novatek,pen-support;
+		//novatek,stylus-resol-double;
+
+		/* 525 */
+		//novatek,swrst-n8-addr = <0x01F01A>;
+
+		/* 672A, 525B, 675, 526, 672C, 523 */
+		novatek,swrst-n8-addr = <0x03F0FE>;
+		novatek,spi-rd-fast-addr = <0x03F310>;
+
+		/* MP */
+		novatek,mp-support-dt;
+
+		novatek-mp-criteria-nvtpid@6037 {
+			#address-cells = <1>;
+			#size-cells = <0>;
+			compatible = "novatek-mp-criteria-6037";
+
+			/* MP Config */
+			IC_X_CFG_SIZE = <18>;
+			IC_Y_CFG_SIZE = <36>;
+			IC_KEY_CFG_SIZE = <4>;
+			X_Channel = <18>;
+			Y_Channel = <36>;
+			AIN_X = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17>;
+			AIN_Y = <0 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25 26 27 28 29 30 31 32 33 34 35>;
+			AIN_KEY = <0 1 2 0xFF>;
+
+			PS_Config_Diff_Test_Frame = <50>;
+
+			#include "tyr-ts_nt36523-mp-data.dtsi"
+
+		};
+	};
+};

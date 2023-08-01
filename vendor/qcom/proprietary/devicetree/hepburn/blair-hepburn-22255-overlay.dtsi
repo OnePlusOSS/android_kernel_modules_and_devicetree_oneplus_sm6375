@@ -1,0 +1,4 @@
+// Gerry.ding@BSP add UST charge hot temperature
+&discrete_charger {
+	qcom,hot_bat_decidegc = <500>;
+};

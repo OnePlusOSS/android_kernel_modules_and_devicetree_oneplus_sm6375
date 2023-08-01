@@ -1,0 +1,17 @@
+&pil_mpss_wlan_mem {
+	reg = <0x0 0x8b800000 0x0 0x3000000>;
+};
+
+&soc {
+	/delete-node/ qcom,msm_gsi;
+	/delete-node/ qcom,rmnet-ipa;
+	/delete-node/ qcom,ipa_fws;
+};
+
+&ipa_hw {
+	status = "disabled";
+	/delete-node/ ipa_smmu_ap;
+	/delete-node/ ipa_smmu_wlan;
+	/delete-node/ ipa_smmu_uc;
+	/delete-node/ ipa_smmu_11ad;
+};

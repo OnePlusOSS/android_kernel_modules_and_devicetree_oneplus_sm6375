@@ -1,0 +1,41 @@
+&discrete_charger {
+    qcom,hot_bat_decidegc = <500>;
+    qcom,ff1_normal_fastchg_ma = <1400>;
+    qcom,ffc2_normal_fastchg_ma = <1400>;
+    qcom,ffc_normal_vfloat_sw_limit = <4505>;
+    qcom,ffc2_normal_vfloat_sw_limit = <4505>;
+};
+
+&qupv3_se7_i2c {
+    sc8547-charger@6f {
+        qcom,vooc_batt_over_high_temp = <500>;
+        qcom,vooc-high-temp = <490>;
+        qcom,vooc_ntime_full_voltage = <4511>;
+        svooc_charge_strategy {
+            strategy_soc_0_to_50 {
+                strategy_temp_little_cool = <4180 40 0 0 0
+                                            4480 30 0 0 0
+                                            4480 25 0 0 0
+                                            4501 20 0 0 0
+                                            4501 15 0 0 0
+                                            4511 10 1 0 0>;
+                strategy_temp_normal_low = <4100 61 0 100 0
+                                            4145 50 0 360 0
+                                            4316 40 0 1200 0
+                                            4470 30 0 0 0
+                                            4470 25 0 0 0
+                                            4490 20 0 0 0
+                                            4490 15 0 0 0
+                                            4511 10 1 0 0>;
+                strategy_temp_normal_high = <4200 61 0 100 0
+                                            4200 50 0 360 0
+                                            4350 40 0 1200 0
+                                            4480 30 0 0 0
+                                            4480 25 0 0 0
+                                            4501 20 0 0 0
+                                            4501 15 0 0 0
+                                            4511 10 1 0 0>;
+            };
+        };
+    };
+};
