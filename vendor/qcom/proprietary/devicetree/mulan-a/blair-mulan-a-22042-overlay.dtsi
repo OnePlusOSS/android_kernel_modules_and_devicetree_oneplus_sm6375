@@ -1,0 +1,153 @@
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "charge/oplus_charge_mulan-a-22241.dtsi"
+//#endif
+
+//#ifdef OPLUS_FEATURE_FINGERPRINT
+&soc{
+	oplus_fp_common {
+		compatible = "oplus,fp_common";
+		oplus,fp_gpio_num = <1>;
+		oplus,fp_gpio_0 = <&tlmm 53 0x0>;
+		pinctrl-names = "default";
+		pinctrl-0 = <&gpio_id2_default>;
+		jiiov_0301 {
+			oplus,fp-id = <0>; /* fp id mapping table */
+			vendor-chip = <23>; /* please refer to the struct fp_vendor_t in oplus_fp_commmon.h */
+			eng-menu = "-1,-1"; /* represents SNR, inclination test item in engineer menu, and 0/1 means off/on */
+			chip-name = "JIIOV_0301";  /* /proc/fp_id, will be displayed in engineer menu  */
+		};
+		jiiov_0301_bak {
+			oplus,fp-id = <1>; /* fp id mapping table */
+			vendor-chip = <23>; /* please refer to the struct fp_vendor_t in oplus_fp_commmon.h */
+			eng-menu = "-1,-1"; /* represents SNR, inclination test item in engineer menu, and 0/1 means off/on */
+			chip-name = "JIIOV_0301";  /* /proc/fp_id, will be displayed in engineer menu  */
+		};
+	};
+
+	jiiov_fp {
+		status = "ok";
+		compatible = "jiiov,fingerprint";
+		interrupt-parent = <&tlmm>;
+		interrupts = <17 0>;
+		ldo-supply = <&pm6125_l21>;
+		anc,gpio_irq = <&tlmm 17 0x1>;
+		anc,gpio_rst = <&tlmm 18 0x0>;
+		pinctrl-names = "default", "anc_reset_reset", "anc_reset_active", "anc_irq_active";
+		pinctrl-0 = <&gpio_anc_irq_default>, <&gpio_anc_reset_default>;
+		pinctrl-1 = <&msm_gpio_18>;
+		pinctrl-2 = <&msm_gpio_18_output_high>;
+		pinctrl-3 = <&msm_gpio_17>;
+	};
+};
+
+&tlmm {
+	/* blair_reserved_gpios[] = {13, 14, 15, 16, 17, 45, 46, 48, 56, 57, -1}; */
+	/* delete gpio 17 45 46 */
+	gpios = /bits/ 16 <
+			0 1 2 3 4 5 6 7 8 9
+			10 11 12             17 18 19
+			20 21 22 23 24 25 26 27 28 29
+			30 31 32 33 34 35 36 37 38 39
+			40 41 42 43 44 45 46 47    49
+			50 51 52 53 54 55       58 59
+			60 61 62 63 64 65 66 67 68 69
+			70 71 72 73 74 75 76 77 78 79
+			80 81 82 83 84 85 86 87 88 89
+			90 91 92 93 94 95 96 97 98 99
+			100 101 102 103 104 105 106 107 108 109
+			110 111 112 113 114 115 116 117 118 119
+			120 121 122 123 124 125 126 127 128 129
+			130 131 132 133 134 135 136 137 138 139
+			140 141 142 143 144 145 146 147 148 149
+			150 151 152 153 154 155 156
+			>;
+    //#ifdef OPLUS_FEATURE_FINGERPRINT
+	oplus_fp_common{
+		gpio_id2_default: gpio_id2_default {
+			mux {
+				pins = "gpio53";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio53";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
+
+	jiiov_fp{
+		gpio_anc_irq_default: gpio_anc_irq_default {
+			mux {
+				pins = "gpio17";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio17";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+		gpio_anc_reset_default: gpio_anc_reset_default {
+			mux {
+				pins = "gpio18";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio18";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		msm_gpio_18: msm_gpio_18 {
+			mux {
+				pins = "gpio18";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio18";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+
+		msm_gpio_18_output_high: msm_gpio_18_output_high {
+			mux {
+				pins = "gpio18";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio18";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		msm_gpio_17: msm_gpio_17 {
+			mux {
+				pins = "gpio17";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio17";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+	//#endif /*OPLUS_FEATURE_FINGERPRINT*
+};
+
+&gpio_wakeup {
+	gpio_table = <2 3 6 12 33 38 56 57 88 90 91 92 99 102 108 113 114 115 116
+		      7 8 9 48 51 59 84 85 86 107 117 118 152 153 154 155>;
+};

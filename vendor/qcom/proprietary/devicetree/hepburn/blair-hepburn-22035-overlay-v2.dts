@@ -1,0 +1,21 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-hepburn-overlay-common.dtsi"
+#include "blair-hepburn-22035-overlay.dtsi"
+#include "sensor/hepburn-22035-sensor-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <22035>;
+	oplus,pcb_range = <49 54 >;
+};
+
+#include "camera/blair-22035-camera-sensor-mtp.dtsi"
+#include "nfc/hepburn-22035-nfc-sn110t.dtsi"
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "charge/oplus_charge_hepburn_v2.dtsi"
+//#endif
