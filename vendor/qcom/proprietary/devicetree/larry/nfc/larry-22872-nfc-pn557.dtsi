@@ -1,0 +1,35 @@
+&soc {
+	//add for nfc_chipset
+	nfc_chipset {
+        compatible = "oplus-nfc-chipset";
+	    chipset-22872-3 = "PN557";
+	    chipset-22872-4 = "PN557";
+	};
+};
+
+//add for disable wake-up function of NC-GPIO
+&gpio_wakeup {
+	gpio_table = <2 3 6 12 33 38 88 90 91 92 99 102 108 113 114 115 116
+                              48 51 59 84 85 86 107 117 118 152 153 154 155>;
+};
+&qupv3_se10_i2c {
+    //add for NXP PN557 NFC GPIO
+	status = "ok";
+	//qcom,clk-freq-out = <1000000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	nq@2A {
+		compatible = "nxp,pn544";
+		reg = <0x2A>;
+		nxp,pn544-irq = <&tlmm 9 0x00>;
+		nxp,pn544-ven = <&tlmm 141 0x00>;
+		nxp,pn544-fw-dwnld = <&tlmm 8 0x00>;
+		qcom,nq-clkreq = <&tlmm 7 0x00>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <9 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend>;
+	};
+};

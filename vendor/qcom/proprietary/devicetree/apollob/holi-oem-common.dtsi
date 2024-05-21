@@ -1,0 +1,14 @@
+/* DTB: Platform related generic modifications */
+#include "../qcom/holi.dtsi"
+
+&adsp_loader {
+//ifdef OPLUS_FEATURE_SENSOR_DRIVER
+//tangweiqin@BSP,Sensor,20201216,modify for sensor 1.8v always on
+	vddio-supply = <&pm6150a_l8>;
+//endif
+};
+
+&wdog {
+		qcom,bark-time = <22000>;
+};
+

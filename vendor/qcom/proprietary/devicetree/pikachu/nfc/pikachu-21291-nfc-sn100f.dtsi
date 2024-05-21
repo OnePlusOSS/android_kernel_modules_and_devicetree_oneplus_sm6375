@@ -1,0 +1,49 @@
+/**********************************************************************************
+* Copyright (c)  2008-2020  Guangdong oplus Mobile Comm Corp., Ltd
+* VENDOR_EDIT
+* Description: oplus SN100F nfc dtsi
+* 
+* Version: 1.0
+* Date: 2020-10-15
+* Author: Weiwei.Deng
+* 
+* ------------------------------ Revision History: --------------------------------
+* <version>           <date>                <author>                            <desc>
+* Revision 1.0       2020-10-15            Weiwei.Deng           Created for SN100F nfc dtsi
+***********************************************************************************/
+&soc {
+	//add for nfc_chipset
+	nfc_chipset {
+		compatible = "oplus-nfc-chipset";
+		chipset-21291 = "SN100T";
+	};
+};
+
+//add for disable wake-up function of NC-GPIO
+&gpio_wakeup {
+	gpio_table = <2 3 12 33 38 56 57 88 90 91 92 99 102 108 113 114 115 116
+                      48 51 59 84 85 86 107 117 118 152 153 154 155>;
+};
+
+
+&qupv3_se10_i2c {
+	status = "ok";
+	//qcom,clk-freq-out = <1000000>;
+	#address-cells = <1>;
+	#size-cells = <0>;
+	nq@28 {
+		compatible = "qcom,sn-nci";
+		reg = <0x28>;
+		qcom,sn-irq = <&tlmm 9 0x00>;
+		qcom,sn-ven = <&tlmm 6 0x00>;
+		qcom,sn-firm = <&tlmm 8 0x00>;
+		qcom,sn-clkreq = <&tlmm 7 0x00>;
+		interrupt-parent = <&tlmm>;
+		interrupts = <9 0>;
+		interrupt-names = "nfc_irq";
+		pinctrl-names = "nfc_active", "nfc_suspend";
+		pinctrl-0 = <&nfc_int_active &nfc_enable_active>;
+		pinctrl-1 = <&nfc_int_suspend &nfc_enable_suspend>;
+	};
+};
+

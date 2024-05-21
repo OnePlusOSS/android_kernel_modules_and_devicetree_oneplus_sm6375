@@ -1,0 +1,15 @@
+/dts-v1/;
+
+#include "../qcom/blair.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair SoC";
+	compatible = "qcom,blair";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0 0>;
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+	aliases {
+		serial0 = &qupv3_se0_2uart;
+	};
+//#endif
+};

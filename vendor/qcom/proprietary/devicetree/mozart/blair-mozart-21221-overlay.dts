@@ -1,0 +1,35 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-mozart-overlay.dtsi"
+#include "blair-mozart-21221-overlay.dtsi"
+#include "nfc/mozart-21221-nfc-pn557.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <21221>;
+	qcom,pmic-id-size = <4>;
+	qcom,pmic-id = <0x2D 0x0 0x0 0x0>;
+};
+
+&soc{
+	oplus_secure_common {
+		compatible = "oplus,secure_common";
+		oplus,sec_reg_num = <0x1B405D8>;
+		oplus,sec_en_anti_reg = <0x1B401CC>;
+		oplus,sec_override1_reg = <0x7860C0>;
+		oplus,override1_en_value = <0x1>;
+	};
+};
+
+&usb0 {
+	dpdm-supply = <&usb2_phy0>;
+	dwc3@4e00000 {
+		usb-phy = <&usb2_phy0>, <&usb_nop_phy>;
+		maximum-speed = "high-speed";
+		dr_mode = "peripheral";
+	};
+};

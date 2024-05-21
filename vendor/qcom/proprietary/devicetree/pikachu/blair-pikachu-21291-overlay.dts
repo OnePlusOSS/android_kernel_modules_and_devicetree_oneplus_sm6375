@@ -1,0 +1,18 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-pikachu-overlay-common.dtsi"
+#include "blair-pikachu-21291-overlay.dtsi"
+#include "sensor/pikachu-21291-sensor-qrd.dtsi"
+#include "esim/pikachu-21291-esim.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <21291>;
+};
+
+#include "camera/blair-21291-camera-sensor-mtp.dtsi"
+#include "nfc/pikachu-21291-nfc-sn100f.dtsi"

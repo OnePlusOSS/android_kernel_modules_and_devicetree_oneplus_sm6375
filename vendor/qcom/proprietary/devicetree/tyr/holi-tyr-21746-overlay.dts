@@ -1,0 +1,20 @@
+/dts-v1/;
+/plugin/;
+
+#include "holi-tyr-overlay-common.dtsi"
+#include "holi-tyr-21746-overlay.dtsi"
+#include "sensor/tyr-21746-sensor-qrd.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <21746>;
+};
+
+#include "camera/holi-camera-sensor-qrd.dtsi"
+#include "camera/wl2868c.dtsi"
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "charge/oplus_charge_holi.dtsi"
+//#endif

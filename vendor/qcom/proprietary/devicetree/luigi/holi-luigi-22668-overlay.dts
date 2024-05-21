@@ -1,0 +1,20 @@
+/dts-v1/;
+/plugin/;
+
+#include "holi-luigi-overlay-common.dtsi"
+#include "holi-luigi-22668-overlay.dtsi"
+#include "sensor/luigi-22668-sensor-qrd.dtsi"
+#include "nfc/luigi-22668-nfc-pn557.dtsi"
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI";
+	compatible = "qcom,blair-qrd", "qcom,blair", "qcom,qrd";
+	qcom,msm-id = <507 0x10000>;
+	qcom,board-id = <0x1000B 0>;
+	oplus,dtsi_no = <22668>;
+};
+
+#include "camera/holi-camera-sensor-qrd.dtsi"
+//#include "camera/wl2868c.dtsi"
+//#ifdef OPLUS_FEATURE_CHG_BASIC
+#include "charge/oplus_charge_holi.dtsi"
+//#endif
