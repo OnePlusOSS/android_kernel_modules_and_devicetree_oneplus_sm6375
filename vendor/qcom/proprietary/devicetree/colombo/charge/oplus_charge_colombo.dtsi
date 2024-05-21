@@ -28,6 +28,10 @@
 		track,wls_bpp_chg_scheme = <0>;
 		track,wls_epp_chg_scheme = <0>;
 		track,wls_fast_chg_scheme = <0>;
+		track,gauge_status_ctrl_dtsi;
+		track,nominal_qmax1 = <4535>;
+		track,nominal_fcc1 = <4440>;
+		track,external_gauge_num = <1>;
 	};
 
 	oplus_battery_log: oplus,battery_log {
@@ -115,6 +119,13 @@
 		qcom,modify-soc-smooth;
 		qcom,modify-soc-calibration;
 		qcom,sha1_key_index = <2>;
+		zy,gauge-fix-cadc;
+		zy,gauge-cal-board;
+		zy,gauge-check-model;
+		zy,gauge-check-por;
+		battery_params {
+			#include "oplus_charge_22045_22821_blp989_afi.dtsi"
+		};
 	};
 
 	sy6970@6a {
@@ -927,8 +938,8 @@
 		pinctrl-7 = <&qupv3_se9_2uart_sleep>;
 
 		qcom,input_current_charger_ma = <2000>;
-		qcom,pd_input_current_charger_ma = <2000>;
-		qcom,qc_input_current_charger_ma = <2000>;
+		qcom,pd_input_current_charger_ma = <1500>;
+		qcom,qc_input_current_charger_ma = <1500>;
 		qcom,input_current_usb_ma = <500>;
 		qcom,input_current_cdp_ma = <1500>;
 		qcom,input_current_camera_ma = <1200>;

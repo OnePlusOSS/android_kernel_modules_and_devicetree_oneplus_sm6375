@@ -698,6 +698,13 @@
 		reg = <0x55>;
 		qcom,modify-soc-smooth;
 		qcom,modify-soc-calibration;
+		zy,gauge-fix-cadc;
+		zy,gauge-cal-board;
+		zy,gauge-check-model;
+		zy,gauge-check-por;
+		battery_params {
+			#include "oplus_charge_21141_blp965_afi.dtsi"
+		};
 	};
 };
 
@@ -736,6 +743,10 @@
 		track,voocphy_type = <2>;
 		track,wired_max_power = <33000>;
 		track,wired_fast_chg_scheme = <4>;
+		track,gauge_status_ctrl_dtsi;
+		track,nominal_qmax1 = <4535>;
+		track,nominal_fcc1 = <4440>;
+		track,external_gauge_num = <1>;
 	};
 };
 

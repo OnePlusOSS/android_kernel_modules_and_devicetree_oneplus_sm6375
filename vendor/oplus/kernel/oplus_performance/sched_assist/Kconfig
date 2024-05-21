@@ -92,7 +92,7 @@ config OPLUS_FEATURE_EAS_OPT
 	help
 	  control oplus_cap, iowait_protect
 
-config OPLUS_FEATURE_OPLUS_CAP
+config OPLUS_FEATURE_VT_CAP
 	tristate "oplus cap"
 	default n
 	depends on OPLUS_FEATURE_EAS_OPT

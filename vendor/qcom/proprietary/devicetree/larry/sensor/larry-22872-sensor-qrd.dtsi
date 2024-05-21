@@ -70,6 +70,21 @@
 					coef_d = <1310>; //*10000
 					coef_e = <2219>; //*10000
 			};
+			lsensor@2 {
+					sensor-name = <0x82>; //SIP3535
+					sensor-index = <2>;
+					sensor-type = <3>; //OPLUS_ALS
+					bus-number = <2>;
+					irq-number = <98>;
+					als-type = <1>; //NORMAL_LCD
+					is-unit-device = <1>;
+					is-als-dri = <0>;
+					als-factor = <1000>;
+					is_als_initialed = <0>;
+					als_buffer_length = <10>;
+					//normalization_value = <549>;
+					use_lb_algo = <0>;
+			};
 			psensor@0 {
 					sensor-name = <0x80>;//STK3ACX
 					sensor-index = <0>;
@@ -116,6 +131,39 @@
 					sensor-name = <0x81>;//TMD2765
 					sensor-index = <1>;
 					sensor-type = <4>;//OPLUS_PROXIMITY
+					bus-number = <2>;
+					irq-number = <98>;
+					ps-type = <1>;
+					/*1-need close 2-close has contidition 0-not close*/
+					is_need_close_pd = <0>;
+					low_step = <300>;
+					high_step = <400>;
+					low_limit = <700>;
+					high_limit = <900>;
+					dirty_low_step = <500>;
+					dirty_high_step = <150>;
+					ps_dirty_limit = <1800>;
+					ps_ir_limit = <2000>;
+					ps_adjust_min = <0>;
+					ps_adjust_max = <1850>;
+					sampling_count = <5>;
+					step_max = <400>;
+					step_min = <100>;
+					step_div = <2000>;
+					anti_shake_delta = <70>;
+					dynamic_cali_max = <5000>;
+					raw2offset_radio = <1000>;
+					offset_max = <60000>;
+					offset_range_min = <0>;
+					offset_range_max = <65534>;
+					force_cali_limit = <2000>;
+					cali_jitter_limit = <30>;
+					cal_offset_margin = <3000>;
+			};
+			psensor@2 {
+					sensor-name = <0x82>; //SIP3535
+					sensor-index = <2>;
+					sensor-type = <4>; //OPLUS_PROXIMITY
 					bus-number = <2>;
 					irq-number = <98>;
 					ps-type = <1>;

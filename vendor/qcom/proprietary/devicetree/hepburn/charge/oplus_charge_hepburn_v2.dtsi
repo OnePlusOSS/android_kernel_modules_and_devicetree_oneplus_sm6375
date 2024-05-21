@@ -28,6 +28,10 @@
 		track,wls_bpp_chg_scheme = <0>;
 		track,wls_epp_chg_scheme = <0>;
 		track,wls_fast_chg_scheme = <0>;
+		track,gauge_status_ctrl_dtsi;
+		track,nominal_qmax1 = <4535>;
+		track,nominal_fcc1 = <4440>;
+		track,external_gauge_num = <1>;
 	};
 
 	oplus_battery_log: oplus,battery_log {
@@ -114,6 +118,13 @@
 		reg = <0x55>;
 		qcom,modify-soc-smooth;
 		qcom,modify-soc-calibration;
+		zy,gauge-fix-cadc;
+		zy,gauge-cal-board;
+		zy,gauge-check-model;
+		zy,gauge-check-por;
+		battery_params {
+			#include "oplus_charge_22035_blp981_afi.dtsi"
+		};
 	};
 
 

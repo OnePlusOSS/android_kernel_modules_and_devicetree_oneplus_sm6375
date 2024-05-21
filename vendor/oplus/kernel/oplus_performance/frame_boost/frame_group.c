@@ -31,7 +31,7 @@ extern int sysctl_input_boost_enabled;
 #include "cluster_boost.h"
 #include "frame_debug.h"
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 #include <linux/sched_assist/eas_opt/oplus_cap.h>
 #endif
 
@@ -1061,7 +1061,7 @@ static struct oplus_sched_cluster *best_cluster(struct frame_group *grp)
 
 	for_each_sched_fbg_cluster(cluster) {
 		cpu = cpumask_first(&cluster->cpus);
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 		cap = real_cpu_cap[cpu];
 #else
 		cap = capacity_orig_of(cpu);
@@ -1778,7 +1778,7 @@ static bool group_task_fits_cluster_cpus(struct task_struct *tsk,
 
 	return true;
 }
-#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FAKE_CAP)
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
 #ifdef CONFIG_HAVE_SCHED_AVG_IRQ
 static inline unsigned long real_cpu_util_irq(struct rq *rq)
 {
@@ -1809,7 +1809,11 @@ unsigned long real_scale_irq_capacity(unsigned long util, unsigned long irq, uns
 static unsigned long real_scale_rt_capacity(int cpu)
 {
 	struct rq *rq = cpu_rq(cpu);
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 	unsigned long max = arch_scale_cpu_capacity(cpu);
+#else
+	unsigned long max = arch_scale_cpu_capacity(NULL, cpu);
+#endif
 	unsigned long used, free;
 	unsigned long irq;
 
@@ -1837,7 +1841,7 @@ static unsigned long real_scale_rt_capacity(int cpu)
 
 inline unsigned long op_capacity_of(int cpu)
 {
-	if (eas_opt_enable)
+	if (eas_opt_enable && !force_apply_ocap_enable)
 		return real_scale_rt_capacity(cpu);
 	else
 		return cpu_rq(cpu)->cpu_capacity;
@@ -1950,7 +1954,7 @@ unsigned long cpu_util_without(int cpu, struct task_struct *p)
 	 * clamp to the maximum CPU capacity to ensure consistency with
 	 * the cpu_util call.
 	 */
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 	return min_t(unsigned long, util, real_cpu_cap[cpu]);
 #else
 	return min_t(unsigned long, util, capacity_orig_of(cpu));
@@ -2073,7 +2077,7 @@ retry:
 		 * Select the cpu with the most remaining computing power
 		 * from preferred_cluster and available_cluster.
 		 */
-#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FAKE_CAP)
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
 		spare_cap = max_t(long, op_capacity_of(iter_cpu) - cpu_util_without(iter_cpu, p), 0);
 #else
 		spare_cap = max_t(long, capacity_of(iter_cpu) - cpu_util_without(iter_cpu, p), 0);
@@ -2129,7 +2133,7 @@ bool fbg_need_up_migration(struct task_struct *p, struct rq *rq)
 	cluster = grp->preferred_cluster;
 	raw_spin_unlock_irqrestore(&def_fbg_lock, flags);
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 	cpu_capacity = real_cpu_cap[cpu_of(rq)];
 	return group_task_fits_cluster_cpus(p, cluster) &&
 		(cpu_capacity < real_cpu_cap[cpumask_first(&cluster->cpus)]);
@@ -2170,7 +2174,7 @@ bool fbg_skip_migration(struct task_struct *tsk, int src_cpu, int dst_cpu)
 	if (!group_task_fits_cluster_cpus(tsk, cluster))
 		return false;
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 	return real_cpu_cap[dst_cpu] < real_cpu_cap[cpumask_first(&cluster->cpus)];
 #else
 	return capacity_orig_of(dst_cpu) < capacity_orig_of(cpumask_first(&cluster->cpus));
@@ -2205,7 +2209,7 @@ bool fbg_rt_task_fits_capacity(struct task_struct *tsk, int cpu)
 	raw_util = grp->policy_util;
 	grp_util = raw_util + schedtune_grp_margin(raw_util, stune_boost[BOOST_SF_MIGR]);
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 	fits = real_cpu_cap[cpu] >= grp_util;
 #else
 	fits = capacity_orig_of(cpu) >= grp_util;

@@ -471,11 +471,13 @@ static int sc8517_set_chg_enable(struct oplus_voocphy_manager *chip, bool enable
 	/* vac range disable */
 	sc8517_write_byte(chip->client, SC8517_REG_02, 0x7a);
 
-	if (enable)
+	if (enable) {
 		ret = sc8517_write_byte(chip->client, SC8517_REG_02, ENABLE_MOS); /* enable mos */
-	else
+		sc8517_write_byte(chip->client, SC8517_REG_04, 0x36); /* WD:1000ms */
+	} else {
 		ret = sc8517_write_byte(chip->client, SC8517_REG_02, DISENABLE_MOS); /* disable mos */
-
+		sc8517_write_byte(chip->client, SC8517_REG_04, 0x06); /* dsiable wdt */
+	}
 	if (ret < 0) {
 		chg_err("failed to set chg enable(%d)\n", ret);
 		return ret;
@@ -1349,10 +1351,15 @@ static int sc8517_cp_set_work_start(struct oplus_chg_ic_dev *ic_dev, bool start)
 
 	chg_info("%s work %s\n", chip->dev->of_node->name, start ? "start" : "stop");
 	sc8517_read_byte(chip->voocphy->client, SC8517_REG_02, &data);
-	if (start && data == DISENABLE_MOS)
+
+	if (start && data == DISENABLE_MOS) {
 		rc = sc8517_set_chg_enable(chip->voocphy, start);
-	else if (!start && data == ENABLE_MOS)
+		sc8517_write_byte(chip->client, SC8517_REG_04, 0x36); /* WD:1000ms */
+	} else if (!start) {
 		rc = sc8517_set_chg_enable(chip->voocphy, start);
+		sc8517_write_byte(chip->client, SC8517_REG_04, 0x06); /* dsiable wdt */
+	}
+
 	if (rc < 0)
 		return rc;
 

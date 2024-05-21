@@ -2017,6 +2017,7 @@ static int msm_compr_playback_open(struct snd_compr_stream *cstream)
 	atomic_set(&prtd->start, 0);
 	atomic_set(&prtd->drain, 0);
 #if !IS_ENABLED(CONFIG_AUDIO_QGKI)
+	snd_compr_use_pause_in_draining(cstream);
 	atomic_set(&prtd->partial_drain, 0);
 #endif
 	atomic_set(&prtd->xrun, 0);
@@ -2996,12 +2997,6 @@ static int msm_compr_trigger(struct snd_compr_stream *cstream, int cmd)
 				prtd->last_buffer = 1;
 				msm_compr_send_buffer(prtd);
 			}
-#ifdef OPLUS_ARCH_EXTENDS
-		/* Apply CR#3577423 to fix CtsMediaAudioTestCases test fail */
-		} else {
-			pr_err("%s: fail to send partial buffer to dsp\n",__func__);
-			rc = -EPERM;
-#endif /*OPLUS_ARCH_EXTENDS*/
 		}
 
 		atomic_set(&prtd->drain, 1);

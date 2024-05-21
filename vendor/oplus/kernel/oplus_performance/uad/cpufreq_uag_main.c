@@ -31,6 +31,13 @@
 #include <linux/version.h>
 #include "../../power/cpufreq_health/cpufreq_health.h"
 #include <linux/kernel.h>
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+#include "../sched_assist/eas_opt/oplus_iowait.h"
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+#include "../sched_assist/eas_opt/oplus_cap.h"
+#endif
 
 #ifdef CONFIG_OPLUS_MULTI_LV_TL
 #define DEFAULT_MULTI_TL_SYS 95
@@ -798,10 +805,19 @@ static bool uag_gov_iowait_reset(struct uag_gov_cpu *sg_cpu, u64 time,
 			       bool set_iowait_boost)
 {
 	s64 delta_ns = time - sg_cpu->last_update;
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	unsigned int ticks = TICK_NSEC;
 
+	if (sysctl_oplus_iowait_boost_enabled && sysctl_iowait_reset_ticks)
+		ticks = sysctl_iowait_reset_ticks * TICK_NSEC;
+
+	if (delta_ns <= ticks)
+		return false;
+#else
 	/* Reset boost only if a tick has elapsed since last request */
 	if (delta_ns <= TICK_NSEC)
 		return false;
+#endif
 
 	sg_cpu->iowait_boost = set_iowait_boost ? IOWAIT_BOOST_MIN : 0;
 	sg_cpu->iowait_boost_pending = set_iowait_boost;
@@ -876,6 +892,9 @@ static unsigned long uag_gov_iowait_apply(struct uag_gov_cpu *sg_cpu, u64 time,
 					unsigned long util, unsigned long max)
 {
 	unsigned long boost;
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	struct uag_gov_policy *sg_policy = sg_cpu->sg_policy;
+#endif
 
 	/* No boost currently required */
 	if (!sg_cpu->iowait_boost)
@@ -885,7 +904,13 @@ static unsigned long uag_gov_iowait_apply(struct uag_gov_cpu *sg_cpu, u64 time,
 	if (uag_gov_iowait_reset(sg_cpu, time, false))
 		return util;
 
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	if (!sg_cpu->iowait_boost_pending &&
+			(!sysctl_oplus_iowait_boost_enabled || !sysctl_iowait_apply_ticks ||
+			 (time - sg_policy->last_update > (sysctl_iowait_apply_ticks * TICK_NSEC)))) {
+#else
 	if (!sg_cpu->iowait_boost_pending) {
+#endif
 		/*
 		 * No boost pending; reduce the boost value.
 		 */
@@ -1023,6 +1048,20 @@ static void uag_gov_update_single(struct update_util_data *cb, u64 time,
 	struct uag_gov_policy *sg_policy = sg_cpu->sg_policy;
 	unsigned long util, max;
 	unsigned int next_f;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	struct cpufreq_policy *policy = sg_policy->policy;
+	int util_thresh = 0;
+	unsigned int avg_nr_running = 1;
+	int cluster_id = topology_physical_package_id(cpumask_first(policy->cpus));
+	unsigned long util_orig;
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	unsigned long util_bak;
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	struct rq *rq = cpu_rq(sg_cpu->cpu);
+#endif
+
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
 	unsigned long irq_flags = 0;
 #endif
@@ -1055,12 +1094,20 @@ static void uag_gov_update_single(struct update_util_data *cb, u64 time,
 				   sg_policy->policy->cur); // 通过cpu的cpu cycles来更新当前的平均频率以及平均cap，
 
 	nl = sg_cpu->walt_load.nl;
-	uag_gov_util_adjust(sg_cpu, util, nl, &util, &max); //判断是否到达进入高负载门槛
+	uag_gov_util_adjust(sg_cpu, util, nl, &util, &max);
 #else
 	uag_gov_util_adjust(sg_cpu, util, &util, &max);
 #endif /* CONFIG_ARCH_QCOM */
 
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	util_bak = util;
 	util = uag_gov_iowait_apply(sg_cpu, time, util, max);
+	if (unlikely(eas_opt_debug_enable))
+		trace_printk("[eas_opt]: enable_iowait_boost=%d, cpu:%d, max:%d, cpu->util:%d,iowait_util:%d\n",
+				sysctl_oplus_iowait_boost_enabled, sg_cpu->cpu, max, util_bak, util);
+#else
+	util = uag_gov_iowait_apply(sg_cpu, time, util, max);
+#endif
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
 #ifdef CONFIG_OPLUS_MULTI_LV_TL
 	sg_policy->multi_util[UA_UTIL_SYS] = util;
@@ -1075,7 +1122,25 @@ static void uag_gov_update_single(struct update_util_data *cb, u64 time,
 	fbg_freq_policy_util(sg_cpu->sg_policy->flags, sg_policy->policy->cpus, &util);
 #endif
 #endif
-	next_f = get_next_freq(sg_policy, util, max); //软限频只有在multi_lv_tl开启的时候才会使用
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	if (eas_opt_enable && (util_thresh_percent[cluster_id] != 100)) {
+		util_thresh = max * util_thresh_cvt[cluster_id] >> SCHED_CAPACITY_SHIFT;
+		avg_nr_running = rq->nr_running;
+		util_orig = util;
+		util = (util_thresh < util) ?
+			(util_thresh + ((avg_nr_running * (util-util_thresh) * nr_oplus_cap_multiple[cluster_id]) >> SCHED_CAPACITY_SHIFT)) : util;
+#ifdef CONFIG_OPLUS_MULTI_LV_TL
+		sg_policy->multi_util[UA_UTIL_FBG] = min_t(int, sg_policy->multi_util[UA_UTIL_FBG], util);
+		sg_policy->multi_util[UA_UTIL_SYS] = min_t(int, sg_policy->multi_util[UA_UTIL_SYS], util);
+#endif
+		if (unlikely(eas_opt_debug_enable))
+			trace_printk("[eas_opt]: cluster_id: %d, capacity: %d, util_thresh: %d, util_orig: %d, "
+					"util: %d, avg_nr_running: %d, oplus_cap_multiple: %d,nr_oplus_cap_multiple: %d, util_thresh: %d\n",
+					cluster_id, max, util_thresh, util_orig, util, avg_nr_running,
+					oplus_cap_multiple[cluster_id], nr_oplus_cap_multiple[cluster_id], util_thresh_percent[cluster_id]);
+	}
+#endif
+	next_f = get_next_freq(sg_policy, util, max);
 
 	/*cobuck check*/
 	next_f = uag_gov_get_final_freq(sg_cpu, sg_policy, next_f); 
@@ -1102,18 +1167,36 @@ static unsigned int uag_gov_next_freq_shared(struct uag_gov_cpu *sg_cpu, u64 tim
 	struct cpufreq_policy *policy = sg_policy->policy;
 	unsigned long util = 0, max = 1;
 	unsigned int j;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	int util_thresh = 0;
+	unsigned int avg_nr_running = 1;
+	unsigned int count_cpu = 0;
+	int cluster_id = topology_physical_package_id(cpumask_first(policy->cpus));
+	unsigned long util_orig;
+#endif
 
 	for_each_cpu(j, policy->cpus) {
 		struct uag_gov_cpu *j_sg_cpu = &per_cpu(uag_gov_cpu, j);
 		unsigned long j_util, j_max;
 #ifdef CONFIG_ARCH_QCOM
 		unsigned long j_nl;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+		struct rq *rq = cpu_rq(j);
+#endif
 #endif /* CONFIG_ARCH_QCOM */
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+		avg_nr_running += rq->nr_running;
+		count_cpu++;
+#endif
 
 		j_util = j_sg_cpu->util;
 		j_max = j_sg_cpu->max;
 		j_util = uag_gov_iowait_apply(j_sg_cpu, time, j_util, j_max);
-
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+		if (unlikely(eas_opt_debug_enable))
+			trace_printk("[eas_opt]: enable_iowait_boost=%d, cpu:%d, max:%d, cpu->util:%d,iowait_util:%d\n",
+					sysctl_oplus_iowait_boost_enabled, j_sg_cpu->cpu, j_sg_cpu->max, j_sg_cpu->util, j_util);
+#endif
 		if (j_util * max > j_max * util) {
 			util = j_util;
 			max = j_max;
@@ -1140,6 +1223,22 @@ static unsigned int uag_gov_next_freq_shared(struct uag_gov_cpu *sg_cpu, u64 tim
 	/* Adjust &util with frame boost policy, avoiding frame misssing */
 	fbg_freq_policy_util(sg_policy->flags, policy->cpus, &util);
 #endif
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_VT_CAP)
+	if (eas_opt_enable && (util_thresh_percent[cluster_id] != 100) && count_cpu) {
+		util_thresh = max * util_thresh_cvt[cluster_id] >> SCHED_CAPACITY_SHIFT;
+		avg_nr_running = mult_frac(avg_nr_running, 1, count_cpu);
+		util_orig = util;
+		util = (util_thresh < util) ?
+			(util_thresh + ((avg_nr_running * (util-util_thresh) * nr_oplus_cap_multiple[cluster_id]) >> SCHED_CAPACITY_SHIFT)) : util;
+#ifdef CONFIG_OPLUS_MULTI_LV_TL
+		sg_policy->multi_util[UA_UTIL_FBG] = min_t(int, sg_policy->multi_util[UA_UTIL_FBG], util);
+		sg_policy->multi_util[UA_UTIL_SYS] = min_t(int, sg_policy->multi_util[UA_UTIL_SYS], util);
+#endif
+		if (unlikely(eas_opt_debug_enable))
+			trace_printk("[eas_opt]: cluster_id: %d, util_orig: %d, util: %d, avg_nr_running: %d, oplus_cap_multiple: %d,nr_oplus_cap_multiple: %d, util_thresh: %d\n",
+					cluster_id, util_orig, util, avg_nr_running, oplus_cap_multiple[cluster_id], nr_oplus_cap_multiple[cluster_id], util_thresh_percent[cluster_id]);
+	}
 #endif
 
 	return get_next_freq(sg_policy, util, max);
@@ -1186,6 +1285,9 @@ uag_gov_update_shared(struct update_util_data *cb, u64 time, unsigned int flags)
 
 #ifdef CONFIG_ARCH_QCOM
 		next_f = cpufreq_driver_resolve_freq(sg_policy->policy, next_f);
+#endif
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+		sg_policy->last_update = time;
 #endif
 
 		if (sg_policy->policy->fast_switch_enabled)
@@ -1555,7 +1657,7 @@ static ssize_t soft_limit_freq_show(struct gov_attr_set *attr_set, char *buf)
 	ssize_t ret = 0;
 
 	spin_lock_irqsave(&tunables->soft_limit_freq_lock, flags);
-	ret = sprintf(buf, "%u\n", tunables->soft_limit_freq);
+	ret = sprintf(buf, "%lu\n", tunables->soft_limit_freq);
 	spin_unlock_irqrestore(&tunables->soft_limit_freq_lock, flags);
 
 	return ret;

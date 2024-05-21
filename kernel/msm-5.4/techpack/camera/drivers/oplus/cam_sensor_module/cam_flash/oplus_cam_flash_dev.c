@@ -669,12 +669,12 @@ int shutdown_flash_notify(struct notifier_block *nb, unsigned long action, void 
 
 	if (!flash_off_setting || !cur_flash_ftm_data || !vendor_flash_ctrl) {
 		CAM_ERR(CAM_FLASH,"Empty flash off setting!");
-		return NOTIFY_BAD;
+		return NOTIFY_DONE;
 	}
 	rc = cam_ftm_i2c_flash_off(vendor_flash_ctrl, cur_flash_ftm_data);
 	if (rc) {
 		CAM_ERR(CAM_FLASH, "Set flash off in shutdown failed!");
-		rc = NOTIFY_BAD;
+		rc = NOTIFY_DONE;
 	} else {
 		CAM_ERR(CAM_FLASH, "Set flash off in shutdown successful, cur action:%lu", action);
 		rc = NOTIFY_OK;

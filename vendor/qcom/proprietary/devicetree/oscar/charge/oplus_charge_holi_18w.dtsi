@@ -592,6 +592,8 @@
 		qcom,slave_chg_disable_ma = <500>;
 
 		qcom,sw_vfloat_over_protect_enable;
+		qcom,copycat_vooc_support;
+		oplus,copycat_identify_algorithm = <2>;
 
 		qcom,normal_vterm_hw_inc = <18>;
 		qcom,non_normal_vterm_hw_inc = <18>;

@@ -10,7 +10,7 @@
 #include <linux/proc_fs.h>
 #include <linux/uaccess.h>
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 #include "oplus_cap.h"
 #endif
 
@@ -26,18 +26,15 @@ int eas_opt_debug_enable = 0;
 EXPORT_SYMBOL(eas_opt_debug_enable);
 int eas_opt_enable = 0;
 EXPORT_SYMBOL(eas_opt_enable);
+int force_apply_ocap_enable = 0;
+EXPORT_SYMBOL(force_apply_ocap_enable);
 
 #define PARAM_NUM 2
 static ssize_t proc_eas_opt_enabled_write(struct file *file, const char __user *buf,
 		size_t count, loff_t *ppos)
 {
 	char buffer[MIDDLE_BUFFER_SIZE];
-	char *str, *token;
-	char opt_str[PARAM_NUM][L_BUFFER_SIZE] = {"0", "0"};
-	int cnt = 0;
-	int i = 0;
-	int val = 0;
-	int err;
+	int err, val;
 
 	memset(buffer, 0, sizeof(buffer));
 
@@ -48,24 +45,39 @@ static ssize_t proc_eas_opt_enabled_write(struct file *file, const char __user *
 		return -EFAULT;
 
 	buffer[count] = '\0';
-	str = strstrip(buffer);
-	while ((token = strsep(&str, " ")) && *token && (cnt < 2)) {
-		strlcpy(opt_str[cnt], token, sizeof(opt_str[cnt]));
-		cnt += 1;
+	err = kstrtoint(strstrip(buffer), 10, &val);
+	if (err)
+		return err;
+
+	switch (val) {
+	case 0:
+		eas_opt_enable = 0;
+		eas_opt_debug_enable = 0;
+		force_apply_ocap_enable = 0;
+		break;
+	case 1:
+		eas_opt_enable = 1;
+		eas_opt_debug_enable = 0;
+		force_apply_ocap_enable = 0;
+		break;
+	case 2:
+		eas_opt_enable = 1;
+		eas_opt_debug_enable = 0;
+		force_apply_ocap_enable = 1;
+		break;
+	case 3:
+		eas_opt_enable = 1;
+		eas_opt_debug_enable = 1;
+		force_apply_ocap_enable = 0;
+		break;
+	case 4:
+		eas_opt_enable = 1;
+		eas_opt_debug_enable = 1;
+		force_apply_ocap_enable = 1;
+		break;
+	default:
+		break;
 	}
-
-	for (i = 0; i < PARAM_NUM && i < cnt; i++) {
-		err = kstrtoint(strstrip(opt_str[i]), 10, &val);
-		if (err)
-			return err;
-
-		if (i == 0)
-			eas_opt_enable = val;
-
-		if (i == 1)
-			eas_opt_debug_enable = val;
-	}
-
 	return count;
 }
 
@@ -75,7 +87,7 @@ static ssize_t proc_eas_opt_enabled_read(struct file *file, char __user *buf,
 	char buffer[MIDDLE_BUFFER_SIZE];
 	size_t len = 0;
 
-	len = snprintf(buffer, sizeof(buffer), "eas_opt_enable=%d eas_opt_debug_enable=%d\n", eas_opt_enable, eas_opt_debug_enable);
+	len = snprintf(buffer, sizeof(buffer), "eas_enable=%d eas_debug_enable=%d force_apply=%d\n", eas_opt_enable, eas_opt_debug_enable, force_apply_ocap_enable);
 
 	return simple_read_from_buffer(buf, count, ppos, buffer, len);
 }
@@ -99,7 +111,7 @@ static int __init oplus_eas_opt_init(void)
 
 	proc_node = proc_create("eas_opt_enable", 0666, eas_opt_dir, &proc_eas_opt_enabled_fops);
 
-#ifdef CONFIG_OPLUS_FEATURE_OPLUS_CAP
+#ifdef CONFIG_OPLUS_FEATURE_VT_CAP
 	ret = oplus_cap_init(eas_opt_dir);
 	if (ret != 0)
 		return ret;

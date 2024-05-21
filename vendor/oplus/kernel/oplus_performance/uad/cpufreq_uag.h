@@ -102,6 +102,9 @@ struct uag_gov_policy {
 	unsigned int		fbg_gt_sys_cnt;
 	unsigned int		total_cnt;
 #endif
+#if IS_ENABLED(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT)
+	u64			last_update;
+#endif
 };
 
 #define MAX_CLUSTERS 3

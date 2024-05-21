@@ -137,6 +137,7 @@ struct oplus_chg_vooc {
 	struct work_struct err_handler_work;
 	struct work_struct abnormal_adapter_check_work;
 	struct work_struct comm_charge_disable_work;
+	struct work_struct turn_off_work;
 	struct delayed_work vooc_init_work;
 	struct delayed_work vooc_switch_check_work;
 	struct delayed_work check_charger_out_work;
@@ -3046,6 +3047,12 @@ static void oplus_vooc_wired_subs_callback(struct mms_subscribe *subs,
 						&data, false);
 			chip->is_abnormal_adapter = data.intval;
 			break;
+		case WIRED_ITEM_ONLINE_STATUS_ERR:
+			if (chip->vooc_online_keep && chip->wired_online) {
+				oplus_chg_clear_abnormal_adapter_var(chip);
+				schedule_work(&chip->turn_off_work);
+			}
+			break;
 		default:
 			break;
 		}
@@ -5317,6 +5324,12 @@ static void oplus_turn_off_fastchg(struct oplus_chg_vooc *chip)
 	oplus_vooc_fastchg_exit(chip, true);
 }
 
+static void oplus_chg_vooc_turn_off_work(struct work_struct *work)
+{
+	struct oplus_chg_vooc *chip = container_of(work, struct oplus_chg_vooc, turn_off_work);
+	oplus_turn_off_fastchg(chip);
+}
+
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 #include "config/dynamic_cfg/oplus_vooc_cfg.c"
 #endif
@@ -5380,6 +5393,7 @@ static int oplus_vooc_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->err_handler_work, oplus_chg_vooc_err_handler_work);
 	INIT_WORK(&chip->comm_charge_disable_work,
 		  oplus_comm_charge_disable_work);
+	INIT_WORK(&chip->turn_off_work, oplus_chg_vooc_turn_off_work);
 
 	INIT_DELAYED_WORK(&chip->bcc_get_max_min_curr,
 			  oplus_vooc_bcc_get_curr_func);
@@ -5454,6 +5468,7 @@ static int oplus_vooc_remove(struct platform_device *pdev)
 
 static void oplus_vooc_shutdown(struct platform_device *pdev)
 {
+	int rc = 0;
 	struct oplus_chg_vooc *chip = platform_get_drvdata(pdev);
 
 	if (chip == NULL || chip->vooc_ic == NULL) {
@@ -5461,9 +5476,13 @@ static void oplus_vooc_shutdown(struct platform_device *pdev)
 		return;
 	}
 
-	oplus_vooc_set_shutdown_mode(chip->vooc_ic);
-	if (is_wired_charge_suspend_votable_available(chip) && chip->config.voocphy_support != ADSP_VOOCPHY) {
+	if (is_wired_charge_suspend_votable_available(chip) &&
+	    chip->config.voocphy_support != ADSP_VOOCPHY &&
+	    chip->wired_online) {
+		oplus_vooc_set_shutdown_mode(chip->vooc_ic);
 		vote(chip->wired_charge_suspend_votable, SHUTDOWN_VOTER, true, 1, false);
+		rc = set_chg_auto_mode(chip->vooc_ic, false);
+		chg_err("%s to quit auto mode rc= %d\n", rc == 0 ? "success" :"fail", rc);
 		msleep(1000);
 		vote(chip->wired_charge_suspend_votable, SHUTDOWN_VOTER, false, 0, false);
 	}
@@ -6318,7 +6337,6 @@ static bool oplus_check_afi_update_condition(struct oplus_chg_vooc *chip)
 				}
 				return false;
 			} else {
-				chg_err(" true 3: normal charger or others unkown\n");
 				return true;
 			}
 		}

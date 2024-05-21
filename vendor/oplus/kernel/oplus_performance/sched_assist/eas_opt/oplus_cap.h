@@ -51,6 +51,7 @@ extern unsigned long real_cpu_cap[NR_CPUS];
 extern struct groups_adjust group_adjust;
 
 extern int eas_opt_enable;
+extern int force_apply_ocap_enable;
 extern int eas_opt_debug_enable;
 extern int sa_adjust_group_enable;
 extern struct groups_adjust group_adjust;

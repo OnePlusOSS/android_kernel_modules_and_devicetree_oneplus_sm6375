@@ -21,5 +21,5 @@ oplus_locking_strategy-y += sync/mutex.o
 oplus_locking_strategy-y += sync/rwsem.o
 oplus_locking_strategy-$(CONFIG_OPLUS_LOCKING_MONITOR) += sync/kern_lock_stat.o
 obj-$(CONFIG_OPLUS_FEATURE_EAS_OPT) += eas_opt/eas_opt.o
-obj-$(CONFIG_OPLUS_FEATURE_OPLUS_CAP) += eas_opt/oplus_cap.o
+obj-$(CONFIG_OPLUS_FEATURE_VT_CAP) += eas_opt/oplus_cap.o
 obj-$(CONFIG_OPLUS_CPUFREQ_IOWAIT_PROTECT) += eas_opt/oplus_iowait.o

@@ -582,6 +582,7 @@
 };
 
 &dsi_oplus21291samsung_ams643ye01_1080_2400_cmd {
+	oplus,disable-53h-control;
 	oplus,dsi-fod-brightness =
 		<4 0xEB>,
 		<50 0xEA>,

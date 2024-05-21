@@ -1332,7 +1332,7 @@ static int dsi_panel_update_backlight(struct dsi_panel *panel,
 			bl_lvl = oplus_dimlayer_bl_alpha;
 	}
 
-	if (!panel->oplus_priv.disable_53h_control)
+	if (!panel->oplus_priv.disable_53h_control || (!strcmp(panel->name, "samsung ams643ye01 amoled fhd+ panel") && (get_oplus_display_scene() != OPLUS_DISPLAY_AOD_SCENE)))
 	{
 		const struct mipi_dsi_host_ops *ops = dsi->host->ops;
 		char payload[] = {MIPI_DCS_WRITE_CONTROL_DISPLAY, 0xE0};

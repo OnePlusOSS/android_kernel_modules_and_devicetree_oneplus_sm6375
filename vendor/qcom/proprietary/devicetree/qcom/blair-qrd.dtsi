@@ -242,7 +242,7 @@
 			};
 
 			modem_skin_trip0: modem-skin-trip0 {
-				temperature = <42000>;
+				temperature = <60000>;
 				hysteresis = <4000>;
 				type = "passive";
 			};
@@ -260,7 +260,7 @@
 			};
 
 			modem_skin_trip1: modem-skin-trip1 {
-				temperature = <44000>;
+				temperature = <62000>;
 				hysteresis = <4000>;
 				type = "passive";
 			};
@@ -298,7 +298,7 @@
 */
 #endif
 			cx_trip: cx-trip {
-				temperature = <55000>;
+				temperature = <64000>;
 				hysteresis = <5000>;
 				type = "passive";
 			};
@@ -341,7 +341,7 @@
 */
 #endif
 
-			modem-skin-cdev0 {
+			/*modem-skin-cdev0 {
 				trip = <&modem_skin_trip0>;
 				cooling-device = <&modem_pa 1 1>;
 			};
@@ -354,7 +354,7 @@
 			modem-skin-cdev2 {
 				trip = <&cx_trip>;
 				cooling-device = <&modem_pa 3 3>;
-			};
+			};*/
 		};
 	};
 
