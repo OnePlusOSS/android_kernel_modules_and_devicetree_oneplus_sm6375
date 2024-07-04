@@ -1,0 +1,10 @@
+dtbo-$(CONFIG_ARCH_BLAIR)	:= blair-camera.dtbo
+#dtbo-$(CONFIG_ARCH_BLAIR)	+= blair-camera-sensor-mtp.dtbo
+#dtbo-$(CONFIG_ARCH_BLAIR)	+= blair-camera-sensor-qrd.dtbo
+#dtbo-$(CONFIG_ARCH_BLAIR)	+= blair-camera-sensor-cdp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/larry-22821-camera-sensor-mtp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/larry-22872-camera-sensor-mtp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/cadillac-23881-camera-sensor-mtp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/cadillac-23071-camera-sensor-mtp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/avatar-M-23091-camera-sensor-mtp.dtbo
+dtbo-$(CONFIG_ARCH_BLAIR)	+= oplus/avatar-M-23291-camera-sensor-mtp.dtbo

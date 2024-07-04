@@ -1,0 +1,11 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-larry-overlay-common.dtsi"
+#include "blair-larry-22821-overlay.dtsi"
+#include "sensor/larry-sensor-22821.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI,larry 22821";
+	oplus,project-id = <22821>;
+};

@@ -1,0 +1,7 @@
+&rpm_bus {
+	rpm-regulator-ldoa13 {
+		regulator-l13 {
+			regulator-always-on;
+		};
+	};
+};

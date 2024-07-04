@@ -1,0 +1,100 @@
+&holi_snd {
+	qcom,msm-mbhc-usbc-audio-supported = <1>;
+	oplus,mbhc-check-cross-conn = <0>;
+	separate-usbc-switch = <&usbc_switch>;
+
+	// enable HS_G usbc detect
+	hs-g-usbc-det-support = <1>;
+
+	// add for HS-G to CC test
+	pinctrl-names = "default";
+	pinctrl-0 = <&usbc_insert>;
+	hs-g-gpio = <&tlmm 133 0>;
+};
+
+&qupv3_se10_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+
+	aw87xxx_pa@58 {
+		compatible = "awinic,aw87xxx_pa";
+		reg = <0x58>;
+		reset-gpio = <&tlmm 11 0>;
+		dev_index = < 0 >;
+		aw-rx-topo-id = <0x1000ff00>;
+		aw-rx-port-id = <0xB030>;
+		status = "okay";
+	};
+
+};
+
+&soc {
+	usbc_switch: usbc_switch {
+		status = "okay";
+		compatible = "oplus,usbc_switch";
+
+		//pinctrl-names = "default";
+		//pinctrl-0 = <&lr_sel_default>;
+
+		lr-sel-gpio = <&pm6125_gpios 7 0>;
+		mic-gnd-swh-gpio = <&tlmm 89 0>;
+		mic-gnd-swh-gpio-2 = <&tlmm 114 0>;
+		//hs-det-gpio = <&tlmm 154 0>;
+		use-3rd-usb-protocal = <1>;
+
+		pinctrl-names = "default";
+		pinctrl-0 = <&mbhc_hsdet_l>,<&mic_gnd_swh>;
+		pm6375_gpio6 = <&pm6125_gpios 6 0>;
+	};
+};
+
+&tlmm {
+	mbhc_hsdet_l: mbhc_hsdet_l {
+		mux {
+			pins = "gpio154";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio154";
+			drive-strength = <2>;
+			//bias-pull-down;
+			bias-pull-up;
+			output-high;
+			qcom,apps;
+		};
+	};
+
+	mic_gnd_swh: mic_gnd_swh {
+		mux {
+			pins = "gpio89";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio89";
+			drive-strength = <2>;
+			bias-pull-down;
+			qcom,apps;
+		};
+	};
+	usbc_insert: usbc_insert {
+		mux {
+			pins = "gpio133";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio133";
+			drive-strength = <2>;
+			bias-pull-down;
+			qcom,apps;
+		};
+	};
+};
+
+&wcd937x_reset_active {
+	config {
+		drive-strength = <4>; /* 4 mA */
+	};
+};

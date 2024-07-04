@@ -1,0 +1,117 @@
+&qupv3_se2_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+	aw210xx_led@20 {
+		compatible = "awinic,aw210xx_led";
+		reg = <0x20>;
+
+		/* Power Config */
+		enable-gpio = <&tlmm 97 0x1>;
+		vbled-enable-gpio = <&tlmm 53 0x1>;
+
+		aw210xx_led_id = <0>;
+		led_groups_num = <8>;
+		led_allocation_order = <1 3 5 7 2 4 6 8>;
+		global_current = <0xcc>;
+		osc_clk = <1>;
+		br_res = <1>;
+		chipid = <0x22>;
+		status = "okay";
+		// pinctrl-names = "default";
+		// pinctrl-0 = <&aw21xx_enable_pin_default>;
+		aw210xx,red {
+			aw210xx,name = "red";
+			aw210xx,id = <0>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <2 3>;
+		};
+		aw210xx,green {
+			aw210xx,name = "green";
+			aw210xx,id = <1>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <2 3>;
+		};
+		aw210xx,blue {
+			aw210xx,name = "blue";
+			aw210xx,id = <2>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <1 3>;
+		};
+	};
+
+	aw210xx_led@24 {
+		compatible = "awinic,aw210xx_led";
+		reg = <0x24>;
+		enable-gpio = <&tlmm 99 0x1>;
+		aw210xx_led_id = <1>;
+		led_groups_num = <8>;
+		led_allocation_order = <1 3 5 7 2 4 6 8>;
+		global_current = <0xcc>;
+		osc_clk = <1>;
+		br_res = <1>;
+		chipid = <0x22>;
+		status = "okay";
+		// pinctrl-names = "default";
+		// pinctrl-0 = <&aw21xx_enable_pin_default2>;
+		aw210xx,red {
+			aw210xx,name = "red";
+			aw210xx,id = <0>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <2 3>;
+		};
+		aw210xx,green {
+			aw210xx,name = "green";
+			aw210xx,id = <1>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <2 3>;
+		};
+		aw210xx,blue {
+			aw210xx,name = "blue";
+			aw210xx,id = <2>;
+			aw210xx,imax = <1>;
+			aw210xx,led_default_trigger = "none";
+			aw210xx,brightness = <0>;
+			aw210xx,max-brightness = <255>;
+			aw210xx,rise-time-ms = <5>;
+			aw210xx,hold-time-ms = <0>;
+			aw210xx,fall-time-ms = <0>;
+			aw210xx,off-time-ms = <0>;
+			aw210xx,color_ratio = <1 3>;
+		};
+	};
+};

@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+
+#include <dt-bindings/oplus/hw-id.h>
+#include "blair-avatar-m-overlay-common.dtsi"
+#include "oplus_chg/oplus-chg-23091.dtsi"
+#include "sensor/avatar-m-sensor-23091.dtsi"
+#include "oplus_camera_pmic/aw37004.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI,Avatar-M 23091";
+	oplus,project-id = <23091>;
+	oplus,hw-id = <OPLUS_EVB1 OPLUS_T0 OPLUS_EVT1 OPLUS_EVT2 OPLUS_DVT1 OPLUS_DVT2 OPLUS_MP1 OPLUS_PVT1>;
+};

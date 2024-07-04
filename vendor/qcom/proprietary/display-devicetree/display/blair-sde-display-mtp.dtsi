@@ -1,0 +1,100 @@
+#include "blair-sde-display.dtsi"
+
+&pmr735a_gpios {
+	pmx_sde: pmx_sde {
+		sde_dsi_default: sde_dsi_default {
+			//pins = "gpio2";
+			function = "func1";
+			qcom,drive-strength = <2>;
+			power-source = <1>;
+			bias-disable;
+			output-low;
+		};
+	};
+};
+
+&dsi_rm69299_visionox_amoled_video {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_amoled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <255>;
+	qcom,bl-update-flag = "delay_until_first_frame";
+	qcom,platform-reset-gpio = <&pmr735a_gpios 2 0>;
+};
+
+&dsi_rm69299_visionox_amoled_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_amoled>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+	qcom,mdss-dsi-bl-min-level = <1>;
+	qcom,mdss-dsi-bl-max-level = <255>;
+	qcom,bl-update-flag = "delay_until_first_frame";
+	qcom,platform-reset-gpio = <&pmr735a_gpios 2 0>;
+};
+
+&dsi_sim_vid {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_dsc_375_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&dsi_sim_dsc_10b_cmd {
+	qcom,panel-supply-entries = <&dsi_panel_pwr_supply_sim>;
+	qcom,mdss-dsi-bl-pmic-control-type = "bl_ctrl_dcs";
+};
+
+&sde_dsi {
+/* #ifdefine OPLUS_FEATURE_DISPLAY */
+        //qcom,dsi-default-panel = <&dsi_rm69299_visionox_amoled_video>;
+        qcom,dsi-default-panel = <
+	       &dsi_aa566_p_7_a0007_vid
+	       &dsi_ac116_p_7_a0007_vid
+	       &dsi_ac116_p_d_a0016_vid
+	       &dsi_aa570_p_1_a0017_vid
+	>;
+/* #endif */
+};
+
+/* #ifdef OPLUS_FEATURE_DISPLAY */
+&qupv3_se10_i2c {
+	#address-cells = <1>;
+	#size-cells = <0>;
+
+	status = "okay";
+
+	lcd_bias_i2c@3e {
+		compatible = "qualcomm,i2c_lcd_bias";
+		reg = <0x3e>;
+		qualcomm,enp = <&tlmm 101 0x0>;
+		qualcomm,enn = <&tlmm 102 0x0>;
+		status = "okay";
+	};
+};
+
+&soc {
+	lcd_client {
+		compatible = "qualcomm,gpio_lcd_bias";
+		pinctrl-names = "lcd_bias_gpio_enp0","lcd_bias_gpio_enp1","lcd_bias_gpio_enn0","lcd_bias_gpio_enn1";
+		pinctrl-0 = <&lcd_bias_gpio_enp_0>;
+		pinctrl-1 = <&lcd_bias_gpio_enp_1>;
+		pinctrl-2 = <&lcd_bias_gpio_enn_0>;
+		pinctrl-3 = <&lcd_bias_gpio_enn_1>;
+		status = "okay";
+	};
+};
+/* #endif */
+
+&qupv3_se8_i2c {
+	synaptics_tcm@20 {
+		panel = <&dsi_rm69299_visionox_amoled_video
+			&dsi_rm69299_visionox_amoled_cmd>;
+	};
+};

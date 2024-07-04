@@ -1,0 +1,8 @@
+/dts-v1/;
+/plugin/;
+#include "../blair-audio-mtp.dts"
+#include "blair_audio_overlay_common.dtsi"
+#include "avatar-m_23291_audio_overlay_common.dtsi"
+/ {
+        oplus,project-id = <23291>;
+};

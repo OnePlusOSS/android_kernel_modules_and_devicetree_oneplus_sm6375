@@ -1,0 +1,15 @@
+&qupv3_se0_i2c_tp_active {
+	config {
+		/delete-property/ bias-disable;
+		bias-pull-up;
+		qcom,i2c_pull;
+	};
+};
+
+&qupv3_se0_i2c_tp_sleep {
+	config {
+		/delete-property/ bias-disable;
+		bias-pull-up;
+		qcom,i2c_pull;
+	};
+};
