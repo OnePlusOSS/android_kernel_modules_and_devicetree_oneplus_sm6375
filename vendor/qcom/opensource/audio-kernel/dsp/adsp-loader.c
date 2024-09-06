@@ -20,6 +20,10 @@
 #include <linux/remoteproc.h>
 #include <linux/remoteproc/qcom_rproc.h>
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+#include <soc/oplus/system/oplus_mm_kevent_fb.h>
+#define OPLUS_AUDIO_EVENTID_AUDIO_DAEMON     10050
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 
 #define Q6_PIL_GET_DELAY_MS 100
 #define BOOT_CMD 1
@@ -222,6 +226,11 @@ static ssize_t adsp_ssr_store(struct kobject *kobj,
 
 	rproc_shutdown(adsp_dev);
 	adsp_loader_do(adsp_private);
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	mm_fb_audio_kevent_named_delay(OPLUS_AUDIO_EVENTID_AUDIO_DAEMON, \
+		MM_FB_KEY_RATELIMIT_5MIN, 2, "FieldData@@APPS requesting for ADSP restart$$detailData@@audio$$module@@adsp");
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 
 	dev_dbg(&pdev->dev, "%s :: ADSP restarted\n", __func__);
 	return count;

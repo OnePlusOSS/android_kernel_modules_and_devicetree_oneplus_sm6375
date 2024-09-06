@@ -102,7 +102,7 @@ struct kernel_loglevel {
 
 /* oplus ioctl case start */
 #define PANEL_COMMOND_BASE 0x00
-#define PANEL_COMMOND_MAX  0x74
+#define PANEL_COMMOND_MAX  0xBD
 
 #define PANEL_IOCTL_SET_POWER                    PANEL_IOW(0x01, struct panel_vol_set)
 #define PANEL_IOCTL_GET_POWER                    PANEL_IOWR(0x02, struct panel_vol_get)
@@ -189,6 +189,7 @@ struct kernel_loglevel {
 #define PANEL_IOCTL_GET_PWM_PULSE                PANEL_IOWR(0x73, unsigned int)
 #define PANEL_IOCTL_SET_HBM_MAX                  PANEL_IOWR(0x70, unsigned int)
 #define PANEL_IOCTL_GET_HBM_MAX                  PANEL_IOWR(0x71, unsigned int)
+#define PANEL_IOCTL_SET_SHUTDOWN_FLAG            PANEL_IOWR(0xBC, unsigned int)
 /*oplus ioctl case end*/
 
 int oplus_display_panel_init(void);

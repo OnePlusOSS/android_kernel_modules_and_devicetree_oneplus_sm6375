@@ -22,8 +22,21 @@
 /*------------------------------------------------------------------------------*/
 static struct list_head oplus_speaker_list = LIST_HEAD_INIT(oplus_speaker_list);
 static DEFINE_MUTEX(list_mutex);
+static DEFINE_MUTEX(probe_mutex);
 
 struct oplus_amp_status *contrl_status = NULL;
+/*------------------------------------------------------------------------------*/
+void oplus_speaker_probe_lock(void)
+{
+	mutex_lock(&probe_mutex);
+}
+EXPORT_SYMBOL(oplus_speaker_probe_lock);
+/*------------------------------------------------------------------------------*/
+void oplus_speaker_probe_unlock(void)
+{
+	mutex_unlock(&probe_mutex);
+}
+EXPORT_SYMBOL(oplus_speaker_probe_unlock);
 /*------------------------------------------------------------------------------*/
 struct oplus_speaker_device* get_speaker_dev(enum oplus_pa_type pa_type)
 {

@@ -69,7 +69,7 @@
 
 /*#ifdef OPLUS_FEATURE_TP_BASIC*/
 extern int (*tp_gesture_enable_notifier)(unsigned int tp_index);
-static int shutdown_flag = 0;
+extern int shutdown_flag;
 static bool is_pd_with_guesture = false;
 static int panel_esd_check_failed = 0;
 static int tp_irq = 0;
@@ -400,6 +400,12 @@ static int dsi_panel_reset(struct dsi_panel *panel)
 				(r_config->sequence[i].sleep_ms * 1000) + 100);
 	}
 
+#ifdef OPLUS_FEATURE_DISPLAY
+	if (!strcmp(panel->name, "AC172 P 3 A0004 dsc cmd mode panel")) {
+		usleep_range(10000, 10100);
+	}
+#endif /* OPLUS_FEATURE_DISPLAY */
+
 skip_reset_gpio:
 	if (gpio_is_valid(panel->bl_config.en_gpio)) {
 		rc = gpio_direction_output(panel->bl_config.en_gpio, 1);
@@ -589,6 +595,20 @@ static int dsi_panel_power_off(struct dsi_panel *panel)
 	else
 		usleep_range(2*1000, (2*1000)+100);
 #endif /* OPLUS_FEATURE_DISPLAY */
+
+#ifdef OPLUS_FEATURE_DISPLAY
+	/* AC172 P 3 A0004: add shutdown sequence */
+	if (!strcmp(panel->name, "AC172 P 3 A0004 dsc cmd mode panel")) {
+		DSI_INFO("[%s] AC172 P 3 A0004 shutdown_flag = %d\n", __func__, shutdown_flag);
+		if (1 == shutdown_flag) {
+			if (gpio_is_valid(panel->reset_config.reset_gpio) && !panel->reset_gpio_always_on) {
+				gpio_set_value(panel->reset_config.reset_gpio, 0);
+				usleep_range(2000, 2100);
+			}
+		}
+	}
+#endif /* OPLUS_FEATURE_DISPLAY */
+
 	if (gpio_is_valid(panel->reset_config.disp_en_gpio))
 		gpio_set_value(panel->reset_config.disp_en_gpio, 0);
 

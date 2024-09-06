@@ -29,9 +29,9 @@
 #include "../../../../../../kernel/msm-5.4/drivers/usb/typec/tcpc/inc/tcpm.h"
 #include "../../../../../../kernel/msm-5.4/drivers/usb/typec/tcpc/inc/tcpci_typec.h"
 #elif (LINUX_VERSION_CODE < KERNEL_VERSION(6, 1, 0))
-#include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci.h"
-#include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm.h"
-#include "../../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci_typec.h"
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
+#include "../pd_ext/inc/tcpci_typec.h"
 #else
 #include "../../../../usb/typec/tcpc/inc/tcpci.h"
 #include "../../../../usb/typec/tcpc/inc/tcpm.h"
@@ -57,10 +57,12 @@
 #define PORT_A 1
 #define PORT_PD_WITH_USB 2
 #define PORT_PD_WITHOUT_USB 3
+#define PD_DEFAULT_CURRENT_MA 3000
 
 extern void oplus_otg_enable_by_buckboost(void);
 extern void oplus_otg_disable_by_buckboost(void);
 extern void tcpc_late_sync(void);
+extern int oplus_pd_set_aicr(int current_ma, bool en);
 #ifdef OPLUS_CHG_SEPARATE_MUSE
 extern void oplus_set_splitchg_request_dpdm(bool enable);
 extern void oplus_notify_pd_event(unsigned long evt);
@@ -460,7 +462,6 @@ static void pd_sink_set_vol_and_cur(struct rt_pd_manager_data *rpmd,
 	smblib_set_prop(rpmd, POWER_SUPPLY_PROP_PD_CURRENT_MAX, &val);
 }
 
-extern int oplus_pd_set_aicr(int current_ma, bool en);
 static int pd_tcp_notifier_call(struct notifier_block *nb,
 				unsigned long event, void *data)
 {
@@ -495,11 +496,11 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 		}
 
 		if (noti->vbus_state.type & TCP_VBUS_CTRL_PD_DETECT) {
-			pd_sink_set_vol_and_cur(rpmd, rpmd->sink_mv_new,
-						rpmd->sink_ma_new,
+			pd_sink_set_vol_and_cur(rpmd, rpmd->sink_mv_new, rpmd->sink_ma_new,
 						noti->vbus_state.type);
 			oplus_pd_set_aicr(rpmd->sink_ma_new, true);
-			pr_err("set sc6607 pd aicr %d\n", rpmd->sink_ma_new);
+			dev_info(rpmd->dev, " %s set pd aicr from tcp ma= %d\n",
+						__func__, rpmd->sink_ma_new);
 		}
 		break;
 	case TCP_NOTIFY_SOURCE_VBUS:
@@ -540,7 +541,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 			 * start charger type detection,
 			 * and enable device connection
 			 */
-			oplus_pd_set_aicr(3000, false);
+			oplus_pd_set_aicr(PD_DEFAULT_CURRENT_MA, false);
 			cancel_delayed_work_sync(&rpmd->usb_dwork);
 			rpmd->usb_dr = DR_DEVICE;
 			rpmd->usb_type_polling_cnt = 0;
@@ -565,7 +566,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb,
 			 * report charger plug-out,
 			 * and disable device connection
 			 */
-			oplus_pd_set_aicr(3000, false);
+			oplus_pd_set_aicr(PD_DEFAULT_CURRENT_MA, false);
 			cancel_delayed_work_sync(&rpmd->usb_dwork);
 			rpmd->usb_dr = DR_IDLE;
 			schedule_delayed_work(&rpmd->usb_dwork, 0);

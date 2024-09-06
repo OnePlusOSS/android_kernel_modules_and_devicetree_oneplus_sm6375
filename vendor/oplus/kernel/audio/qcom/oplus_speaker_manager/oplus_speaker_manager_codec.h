@@ -44,6 +44,7 @@ enum oplus_pa_work_mode {
 	WORK_MODE_VOICE,
 	WORK_MODE_FM,
 	WORK_MODE_RECEIVER,
+	WORK_MODE_LEFT,
 	WORK_MODE_COUNT,
 };
 
@@ -102,5 +103,7 @@ struct oplus_speaker_device* get_speaker_dev(enum oplus_pa_type pa_type);
 enum oplus_pa_manufacturer get_speaker_manufacturer(enum oplus_pa_type pa_type);
 void *oplus_speaker_pa_register(struct oplus_speaker_device *speaker_device);
 int oplus_speaker_pa_unregister(void *node);
+void oplus_speaker_probe_lock(void);
+void oplus_speaker_probe_unlock(void);
 /*------------------------------------------------------------------------------*/
 #endif /* __OPLUS_SPEAKER_MANAGER_CODEC_H__ */

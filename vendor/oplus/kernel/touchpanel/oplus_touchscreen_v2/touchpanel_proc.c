@@ -333,7 +333,7 @@ static ssize_t proc_palm_to_sleep_read(struct file *file, char __user *buffer,
 		goto OUT;
 	}
 
-	snprintf(buf, PALM_BUF_SIZE - 1, "%d\n", ts->palm_to_sleep_enable);
+	snprintf(buf, PALM_BUF_SIZE - 1, "%d", ts->palm_to_sleep_enable);
 	ret = simple_read_from_buffer(buffer, count, ppos, buf, strlen(buf));
 	TPD_DETAIL("%s: get palm_to_sleep\n", __func__);
 

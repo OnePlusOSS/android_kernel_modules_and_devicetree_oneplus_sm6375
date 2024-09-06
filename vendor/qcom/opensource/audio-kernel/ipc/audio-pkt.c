@@ -490,8 +490,13 @@ static int audio_pkt_srvc_callback(struct gpr_device *adev,
 		__func__,hdr_size, pkt_size);
 
 	skb = alloc_skb(pkt_size, GFP_ATOMIC);
-	if (!skb)
+	if (!skb) {
+#ifdef OPLUS_ARCH_EXTENDS
+		dev_info(&adev->dev, "%s: alloc_skb failed, pkt_size = 0x%x\n",
+			__func__, pkt_size);
+#endif
 		return -ENOMEM;
+	}
 
 	skb_put_data(skb, data, pkt_size);
 

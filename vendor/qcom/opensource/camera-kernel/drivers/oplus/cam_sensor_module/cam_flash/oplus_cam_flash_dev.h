@@ -97,6 +97,7 @@ struct cam_flash_ftm_settings {
 	struct cam_flash_ftm_reg_setting flashinitsettings_mulan_a;
 	struct cam_flash_ftm_reg_setting flashhighsettings;
 	struct cam_flash_ftm_reg_setting flashlowsettings;
+	struct cam_flash_ftm_reg_setting flashlow1ledsettings;
 	struct cam_flash_ftm_reg_setting flashlowlevelsettings[IIC_FLASH_ON_LEVEL_NUM];
 	struct cam_flash_ftm_reg_setting flashoffsettings;
 	struct cam_flash_ftm_power_setting flashpowerupsettings;

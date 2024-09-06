@@ -1965,6 +1965,7 @@ static int aw87xxx_i2c_probe(struct i2c_client *client,
 #ifdef CONFIG_SND_SOC_OPLUS_PA_MANAGER
 	struct oplus_spk_dev_node *spk_dev_node = NULL;
 	struct oplus_speaker_device *speaker_device = get_speaker_dev(L_SPK);
+	oplus_speaker_probe_lock();
 #endif /* CONFIG_SND_SOC_OPLUS_PA_MANAGER */
 
 	if (!i2c_check_functionality(client->adapter, I2C_FUNC_I2C)) {
@@ -2053,6 +2054,9 @@ static int aw87xxx_i2c_probe(struct i2c_client *client,
 #endif /* CONFIG_SND_SOC_OPLUS_PA_MANAGER */
 	AW_DEV_LOGI(aw87xxx->dev, "succeed, dev_index=[%d], g_aw87xxx_dev_cnt= [%d]",
 			aw87xxx->dev_index, g_aw87xxx_dev_cnt);
+#ifdef CONFIG_SND_SOC_OPLUS_PA_MANAGER
+	oplus_speaker_probe_unlock();
+#endif /* CONFIG_SND_SOC_OPLUS_PA_MANAGER */
 
 	return 0;
 
@@ -2071,6 +2075,9 @@ exit_dtsi_parse_failed:
 	aw87xxx = NULL;
 exit_malloc_init_failed:
 exit_check_functionality_failed:
+#ifdef CONFIG_SND_SOC_OPLUS_PA_MANAGER
+	oplus_speaker_probe_unlock();
+#endif /* CONFIG_SND_SOC_OPLUS_PA_MANAGER */
 	return ret;
 }
 

@@ -256,7 +256,7 @@ struct sde_dbg_reglog *sde_reglog_init(void)
 
 	atomic64_set(&reglog->curr, 0);
 #if IS_ENABLED(CONFIG_DEBUG_FS)
-	reglog->enable = true;
+	reglog->enable = false;
 #else
 	reglog->enable = false;
 #endif

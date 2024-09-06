@@ -50,7 +50,11 @@
 #define LPASS_CDC_VA_MACRO_ADC_MUX_CFG_OFFSET 0x8
 #define LPASS_CDC_VA_MACRO_ADC_MODE_CFG0_SHIFT 1
 
+#ifndef OPLUS_ARCH_EXTENDS
 #define LPASS_CDC_VA_TX_DMIC_UNMUTE_DELAY_MS       40
+#else /* OPLUS_ARCH_EXTENDS */
+#define LPASS_CDC_VA_TX_DMIC_UNMUTE_DELAY_MS       50
+#endif /* OPLUS_ARCH_EXTENDS */
 #define LPASS_CDC_VA_TX_AMIC_UNMUTE_DELAY_MS       100
 #define LPASS_CDC_VA_TX_DMIC_HPF_DELAY_MS       300
 #define LPASS_CDC_VA_TX_AMIC_HPF_DELAY_MS       300
@@ -59,9 +63,18 @@
 #define LPASS_CDC_VA_MACRO_CHILD_DEVICES_MAX 3
 
 static const DECLARE_TLV_DB_SCALE(digital_gain, 0, 1, 0);
+#ifndef OPLUS_ARCH_EXTENDS
 static int va_tx_unmute_delay = LPASS_CDC_VA_TX_DMIC_UNMUTE_DELAY_MS;
 module_param(va_tx_unmute_delay, int, 0664);
 MODULE_PARM_DESC(va_tx_unmute_delay, "delay to unmute the tx path");
+#else /* OPLUS_ARCH_EXTENDS */
+static int va_tx_amic_unmute_delay = LPASS_CDC_VA_TX_AMIC_UNMUTE_DELAY_MS;
+module_param(va_tx_amic_unmute_delay, int, 0664);
+MODULE_PARM_DESC(va_tx_amic_unmute_delay, "delay to unmute the tx amic path");
+static int va_tx_dmic_unmute_delay = LPASS_CDC_VA_TX_DMIC_UNMUTE_DELAY_MS;
+module_param(va_tx_dmic_unmute_delay, int, 0664);
+MODULE_PARM_DESC(va_tx_dmic_unmute_delay, "delay to unmute the tx dmic path");
+#endif /* OPLUS_ARCH_EXTENDS */
 
 static int lpass_cdc_va_macro_core_vote(void *handle, bool enable);
 enum {
@@ -1198,8 +1211,19 @@ static int lpass_cdc_va_macro_tx_mixer_put(struct snd_kcontrol *kcontrol,
 			dev_err_ratelimited(component->dev, "%s: channel is already disabled, dec_id = %d, dai_id = %d\n",
 					__func__, dec_id, dai_id);
 		} else {
+#ifdef OPLUS_ARCH_EXTENDS
+/* fix channels number mismatch issues */
+			if (va_priv->active_ch_cnt[dai_id] > 0) {
+				clear_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
+				va_priv->active_ch_cnt[dai_id]--;
+			} else {
+				pr_err("%s: dai_id:%d, active_ch_cnt: %d\n", __func__,
+					dai_id, va_priv->active_ch_cnt[dai_id]);
+			}
+#else /* OPLUS_ARCH_EXTENDS */
 			va_priv->active_ch_cnt[dai_id]--;
 			clear_bit(dec_id, &va_priv->active_ch_mask[dai_id]);
+#endif /* OPLUS_ARCH_EXTENDS */
 		}
 	}
 
@@ -1310,12 +1334,24 @@ static int lpass_cdc_va_macro_enable_dec(struct snd_soc_dapm_widget *w,
 					    TX_HPF_CUT_OFF_FREQ_MASK,
 					    CF_MIN_3DB_150HZ << 5);
 		}
+		#ifndef OPLUS_ARCH_EXTENDS
 		if (is_amic_enabled(component, decimator)) {
 			hpf_delay = LPASS_CDC_VA_TX_AMIC_HPF_DELAY_MS;
 			unmute_delay = LPASS_CDC_VA_TX_AMIC_UNMUTE_DELAY_MS;
 			if (va_tx_unmute_delay < unmute_delay)
 				va_tx_unmute_delay = unmute_delay;
 		}
+		#else /* OPLUS_ARCH_EXTENDS */
+		if (is_amic_enabled(component, decimator)) {
+			hpf_delay = LPASS_CDC_VA_TX_AMIC_HPF_DELAY_MS;
+			unmute_delay = LPASS_CDC_VA_TX_AMIC_UNMUTE_DELAY_MS;
+			if (unmute_delay < va_tx_amic_unmute_delay)
+				unmute_delay = va_tx_amic_unmute_delay;
+		} else {
+			if (unmute_delay < va_tx_dmic_unmute_delay)
+				unmute_delay = va_tx_dmic_unmute_delay;
+		}
+		#endif /* OPLUS_ARCH_EXTENDS */
 		snd_soc_component_update_bits(component,
 				hpf_gate_reg, 0x03, 0x02);
 		if (!is_amic_enabled(component, decimator))
@@ -1335,7 +1371,11 @@ static int lpass_cdc_va_macro_enable_dec(struct snd_soc_dapm_widget *w,
 		lpass_cdc_va_macro_wake_enable(va_priv, 1);
 		queue_delayed_work(system_freezable_wq,
 				   &va_priv->va_mute_dwork[decimator].dwork,
+				   #ifndef OPLUS_ARCH_EXTENDS
 				   msecs_to_jiffies(va_tx_unmute_delay));
+				   #else /* OPLUS_ARCH_EXTENDS */
+				   msecs_to_jiffies(unmute_delay));
+				   #endif /* OPLUS_ARCH_EXTENDS */
 		if (va_priv->va_hpf_work[decimator].hpf_cut_off_freq !=
 							CF_MIN_3DB_150HZ) {
 		lpass_cdc_va_macro_wake_enable(va_priv, 1);

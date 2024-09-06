@@ -454,6 +454,10 @@ static int cam_tfe_error_irq_bottom_half(
 	cam_hw_mgr_event_cb_func              event_cb,
 	void                                 *event_cb_priv)
 {
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	struct cam_isp_hw_error_event_info   err_evt_info;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	struct cam_isp_hw_event_info         evt_info;
 	struct cam_tfe_hw_info              *hw_info;
 	uint32_t   error_detected = 0;
@@ -461,20 +465,39 @@ static int cam_tfe_error_irq_bottom_half(
 	hw_info = core_info->tfe_hw_info;
 	evt_info.hw_idx = core_info->core_index;
 	evt_info.res_type = CAM_ISP_RESOURCE_TFE_IN;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	evt_info.hw_type = CAM_ISP_HW_TYPE_TFE;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	if (evt_payload->irq_reg_val[0] & hw_info->error_irq_mask[0]) {
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		//case：07127783 for mipi crc error
+		err_evt_info.err_type = CAM_TFE_IRQ_STATUS_OVERFLOW;
+		#else
 		evt_info.err_type = CAM_TFE_IRQ_STATUS_OVERFLOW;
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		error_detected = 1;
 	}
 
 	if ((evt_payload->bus_irq_val[0] & hw_info->bus_error_irq_mask[0]) ||
 		(evt_payload->irq_reg_val[2] & hw_info->error_irq_mask[2])) {
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		//case：07127783 for mipi crc error
+		err_evt_info.err_type = CAM_TFE_IRQ_STATUS_VIOLATION;
+		#else
 		evt_info.err_type = CAM_TFE_IRQ_STATUS_VIOLATION;
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		error_detected = 1;
 	}
 
 	if (error_detected) {
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		//case：07127783 for mipi crc error
+		evt_info.event_data = (void *)&err_evt_info;
+		#else
 		evt_info.err_type = CAM_TFE_IRQ_STATUS_OVERFLOW;
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		top_priv->error_ts.tv_sec =
 			evt_payload->ts.mono_time.tv_sec;
 		top_priv->error_ts.tv_nsec =

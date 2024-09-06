@@ -115,6 +115,7 @@
 		status = "okay";
 		compatible = "oplus,bq27541-battery";
 		reg = <0x55>;
+		oplus,enable_sleep_mode;
 		io-channels = <&pm6125_vadc ADC5_GPIO2_100K_PU>;
 		io-channel-names = "batt_id_chan";
 		dep-supply = <&pm6125_vadc>;
@@ -208,8 +209,8 @@
 		 */
 		charger_name = "primary_chg";
 		qcom,voocphy_freq_mincore = <1113600>;
-		qcom,voocphy_freq_midcore = <1651200>;
-		qcom,voocphy_freq_maxcore = <1651200>;
+		qcom,voocphy_freq_midcore = <1804800>;
+		qcom,voocphy_freq_maxcore = <1804800>;
 
 		qcom,mb_gauge_support;
 		qcom,charging_switch1-gpio = <&tlmm 93 0x00>;
@@ -222,6 +223,7 @@
 		qcom,svooc_cool_down_current_limit = <82 20 20 24 30 34 40 44 50 54 82>;
 		qcom,vooc_cool_down_current_limit = <30 20 20 24 30>;
 		qcom,abnormal_adapter_current = <60 60 40 40>;
+		oplus,workaround_for_100w;
 		qcom,vooc_little_cold_full_voltage = <4470>;
 		qcom,vooc_cool_full_voltage = <4470>;
 		qcom,vooc_warm_full_voltage = <4130>;
@@ -253,7 +255,7 @@
 		qcom,vooc-high-temp = <500>;
 		qcom,vooc-low-soc = <0>;
 		qcom,vooc-high-soc = <90>;
-		qcom,vooc-normal-high-temp = <430>;
+		qcom,vooc-normal-high-temp = <440>;
 		qcom,vooc-warm-allow-vol = <4000>;
 		qcom,vooc-warm-allow-soc = <50>;
 

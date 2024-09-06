@@ -41,6 +41,10 @@
 
 /* Max CSI Rx irq error count threshold value */
 #define CAM_TFE_CSID_MAX_IRQ_ERROR_COUNT               5
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+//case：07127783 for mipi crc error
+#define CAM_TFE_CSID_MAX_CRC_ERROR_COUNT	           25
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 static int cam_tfe_csid_is_ipp_format_supported(
 	uint32_t in_format)
@@ -493,6 +497,10 @@ static int cam_tfe_csid_global_reset(struct cam_tfe_csid_hw *csid_hw)
 		CAM_ERR(CAM_ISP, "CSID:%d IRQ value after reset rc = %d",
 			csid_hw->hw_intf->hw_idx, val);
 	csid_hw->error_irq_count = 0;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	csid_hw->crc_error_irq_count = 0;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	csid_hw->prev_boot_timestamp = 0;
 
 	path_data = (struct cam_tfe_csid_path_cfg *)csid_hw->ipp_res.res_priv;
@@ -1184,6 +1192,10 @@ static int cam_tfe_csid_disable_hw(struct cam_tfe_csid_hw *csid_hw)
 	csid_hw->hw_info->hw_state = CAM_HW_STATE_POWER_DOWN;
 	csid_hw->error_irq_count = 0;
 	csid_hw->prev_boot_timestamp = 0;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	csid_hw->crc_error_irq_count = 0;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	return rc;
 }
@@ -3010,7 +3022,18 @@ static int cam_tfe_csid_evt_bottom_half_handler(
 	struct cam_tfe_csid_hw *csid_hw;
 	struct cam_csid_evt_payload *evt_payload;
 	const struct cam_tfe_csid_reg_offset    *csid_reg;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	struct cam_hw_soc_info *soc_info;
+	const struct cam_tfe_csid_csi2_rx_reg_offset   *csi2_reg;
+	struct cam_isp_hw_error_event_info err_evt_info = {0};
+	struct cam_isp_hw_event_info event_info = {0};
+	uint32_t  long_pkt_ftr_val;
+	uint32_t  total_crc;
+	uint32_t  val;
+	#else
 	struct cam_isp_hw_event_info event_info;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	int i;
 	int rc = 0;
 
@@ -3024,6 +3047,11 @@ static int cam_tfe_csid_evt_bottom_half_handler(
 	csid_hw = (struct cam_tfe_csid_hw *)handler_priv;
 	evt_payload = (struct cam_csid_evt_payload *)evt_payload_priv;
 	csid_reg = csid_hw->csid_info->csid_reg;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	soc_info = &csid_hw->hw_info->soc_info;
+	csi2_reg = csid_reg->csi2_reg;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	if (!csid_hw->event_cb || !csid_hw->event_cb_priv) {
 		CAM_ERR_RATE_LIMIT(CAM_ISP,
@@ -3072,21 +3100,60 @@ static int cam_tfe_csid_evt_bottom_half_handler(
 			evt_payload->irq_status[TFE_CSID_IRQ_REG_RDI1],
 			evt_payload->irq_status[TFE_CSID_IRQ_REG_RDI2]);
 	}
+
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	if (evt_payload->irq_status[TFE_CSID_IRQ_REG_RX] & TFE_CSID_CSI2_RX_ERROR_CRC) {
+		long_pkt_ftr_val = cam_io_r_mb(soc_info->reg_map[0].mem_base +
+			csi2_reg->csid_csi2_rx_captured_long_pkt_ftr_addr);
+		total_crc = cam_io_r_mb(soc_info->reg_map[0].mem_base +
+			csi2_reg->csid_csi2_rx_total_crc_err_addr);
+
+		if (csid_hw->csi2_rx_cfg.lane_type == CAM_ISP_LANE_TYPE_CPHY) {
+			val = cam_io_r_mb(soc_info->reg_map[0].mem_base +
+				csi2_reg->csid_csi2_rx_captured_cphy_pkt_hdr_addr);
+
+			CAM_ERR(CAM_ISP,"PHY_CRC_ERROR: Long pkt payload CRC mismatch. \
+					Total CRC Errs: %u, Rcvd CRC: 0x%x Caltd CRC: 0x%x, \
+					VC:%d DT:%d WC:%d",
+					total_crc, long_pkt_ftr_val & 0xffff,
+					long_pkt_ftr_val >> 16, val >> 22,
+					(val >> 16) & 0x3F, val & 0xFFFF);
+		} else {
+			CAM_ERR(CAM_ISP,"PHY_CRC_ERROR: Long pkt payload CRC mismatch. \
+					Totl CRC Errs: %u, Rcvd CRC: 0x%x Caltd CRC: 0x%x",
+					total_crc, long_pkt_ftr_val & 0xffff,
+					long_pkt_ftr_val >> 16);
+		}
+	}
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	/* this hunk can be extended to handle more cases
 	 * which we want to offload to bottom half from
 	 * irq handlers
 	 */
 	event_info.err_type = evt_payload->evt_type;
 	event_info.hw_idx = evt_payload->hw_idx;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	event_info.res_type = CAM_ISP_RESOURCE_PIX_PATH;
+	event_info.hw_type = CAM_ISP_HW_TYPE_TFE_CSID;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	switch (evt_payload->evt_type) {
 	case CAM_ISP_HW_ERROR_CSID_FATAL:
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	case CAM_ISP_HW_ERROR_CSID_PKT_PAYLOAD_CORRUPTED:
+		csid_hw->fatal_err_detected = true;
+		break;
+	#else
 		if (csid_hw->fatal_err_detected)
 			break;
 		csid_hw->fatal_err_detected = true;
 		rc = csid_hw->event_cb(NULL,
 			CAM_ISP_HW_EVENT_ERROR, (void *)&event_info);
 		break;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	default:
 		CAM_DBG(CAM_ISP, "CSID[%d] error type %d",
@@ -3094,6 +3161,14 @@ static int cam_tfe_csid_evt_bottom_half_handler(
 			evt_payload->evt_type);
 		break;
 	}
+
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	err_evt_info.err_type = evt_payload->evt_type;
+	event_info.event_data = (void *)&err_evt_info;
+	rc = csid_hw->event_cb(csid_hw->event_cb_priv,
+		CAM_ISP_HW_EVENT_ERROR, (void *)&event_info);
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 end:
 	cam_tfe_csid_put_evt_payload(csid_hw, &evt_payload);
 	return 0;
@@ -3156,6 +3231,10 @@ irqreturn_t cam_tfe_csid_irq(int irq_num, void *data)
 	uint32_t sof_irq_debug_en = 0, log_en = 0;
 	unsigned long flags;
 	uint32_t i, val;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	uint32_t err_type = CAM_ISP_HW_ERROR_NONE;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 	if (!data) {
 		CAM_ERR(CAM_ISP, "CSID: Invalid arguments");
@@ -3260,9 +3339,23 @@ irqreturn_t cam_tfe_csid_irq(int irq_num, void *data)
 			TFE_CSID_CSI2_RX_ERROR_UNBOUNDED_FRAME)
 			csid_hw->error_irq_count++;
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+//case：07127783 for mipi crc error
+		if (irq_status[TFE_CSID_IRQ_REG_RX] &
+			TFE_CSID_CSI2_RX_ERROR_CRC) {
+			csid_hw->crc_error_irq_count++;
+			if (csid_hw->crc_error_irq_count >
+				CAM_TFE_CSID_MAX_CRC_ERROR_COUNT) {
+				is_error_irq = true;
+				err_type = CAM_ISP_HW_ERROR_CSID_PKT_PAYLOAD_CORRUPTED;
+				csid_hw->crc_error_irq_count = 0;
+			}
+		}
+#else
 		if (irq_status[TFE_CSID_IRQ_REG_RX] &
 			TFE_CSID_CSI2_RX_ERROR_CRC)
 			is_error_irq = true;
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 		if (irq_status[TFE_CSID_IRQ_REG_RX] &
 			TFE_CSID_CSI2_RX_ERROR_ECC)
@@ -3550,7 +3643,12 @@ handle_fatal_error:
 			csid_hw->clk_rate);
 
 		cam_tfe_csid_handle_hw_err_irq(csid_hw,
+		#ifdef OPLUS_FEATURE_CAMERA_COMMON
+		//case：07127783 for mipi crc error
+			err_type, irq_status);
+		#else
 			CAM_ISP_HW_ERROR_NONE, irq_status);
+		#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	}
 
 	if (csid_hw->irq_debug_cnt >= CAM_TFE_CSID_IRQ_SOF_DEBUG_CNT_MAX) {
@@ -3715,6 +3813,10 @@ int cam_tfe_csid_hw_probe_init(struct cam_hw_intf  *csid_hw_intf,
 
 	tfe_csid_hw->csid_debug = 0;
 	tfe_csid_hw->error_irq_count = 0;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	tfe_csid_hw->crc_error_irq_count = 0;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	tfe_csid_hw->prev_boot_timestamp = 0;
 
 	rc = cam_tfe_csid_disable_soc_resources(

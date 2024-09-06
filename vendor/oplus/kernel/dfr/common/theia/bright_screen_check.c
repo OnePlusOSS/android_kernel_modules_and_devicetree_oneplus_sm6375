@@ -6,8 +6,8 @@
 #include "theia_kevent_kernel.h"
 
 #define BRIGHT_MAX_WRITE_NUMBER             50
-#define BRIGHT_SLOW_TIMEOUT_MS            10000
-#define BRIGHT_ERROR_RECOVERY_MS         20000
+#define BRIGHT_SLOW_TIMEOUT_MS            20000
+#define BRIGHT_ERROR_RECOVERY_MS         200000
 #define PROC_BRIGHT_SWITCH "brightSwitch"
 
 #define BRIGHT_DEBUG_PRINTK(a, arg...)\
@@ -154,6 +154,9 @@ static bool is_need_skip(void)
 		return true;
 
 	if (is_bright_contain_skip_stage())
+		return true;
+
+	if (is_slowkernel_skip())
 		return true;
 
 	return false;

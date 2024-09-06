@@ -5990,10 +5990,6 @@ void oplus_voocphy_reset_fastchg_after_usbout(void)
 		if (oplus_chg_get_icon_debounce()) {
 			voocphy_info(" icon_debounce, keep fast chg type\n");
 			chip->fastchg_dummy_start = true;
-			if (oplus_voocphy_get_bidirect_cp_support())
-				oplus_voocphy_wake_check_chg_out_work(2000);
-			else
-				oplus_voocphy_wake_check_chg_out_work(3000);
 		} else {
 			chip->fast_chg_type = FASTCHG_CHARGER_TYPE_UNKOWN;
 		}
@@ -6580,7 +6576,7 @@ int oplus_voocphy_curr_event_handle(unsigned long data)
 			curr_over_count++;
 			if (curr_over_count > 3) {
 				voocphy_info("vcurr low than -2000mA\n");
-				oplus_voocphy_set_status_and_notify_ap(g_voocphy_chip, FAST_NOTIFY_BAD_CONNECTED);
+				oplus_voocphy_set_status_and_notify_ap(g_voocphy_chip, FAST_NOTIFY_ABSENT);
 			}
 		} else {
 			curr_over_count = 0;

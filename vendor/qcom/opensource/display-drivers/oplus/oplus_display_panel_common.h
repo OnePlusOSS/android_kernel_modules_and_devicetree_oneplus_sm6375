@@ -141,5 +141,6 @@ void oplus_disable_bl_delay_with_frame(struct dsi_panel *panel, u32 disable_fram
 int oplus_display_panel_set_hbm_max(void *data);
 int oplus_display_panel_get_hbm_max(void *data);
 void oplus_panel_switch_to_sync_te(struct dsi_panel *panel);
+int oplus_display_set_shutdown_flag(void *buf);
 #endif /* _OPLUS_DISPLAY_PANEL_COMMON_H_ */
 

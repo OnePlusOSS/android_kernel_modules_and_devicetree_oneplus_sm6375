@@ -2393,6 +2393,9 @@ static int aw882xx_awrw_write(struct aw882xx *aw882xx, const char *buf, size_t c
 			reg_data[i] = temp_data;
 			aw_dev_dbg(aw882xx->dev, "[%d] : 0x%02x", i, reg_data[i]);
 		} else {
+			kfree(data_buf);
+			data_buf = NULL;
+			reg_data = NULL;
 			return -EINVAL;
 		}
 	}

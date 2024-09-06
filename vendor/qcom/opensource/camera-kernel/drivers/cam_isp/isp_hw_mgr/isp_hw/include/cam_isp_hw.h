@@ -208,6 +208,21 @@ struct cam_isp_blanking_config {
 	struct cam_isp_resource_node       *node_res;
 };
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+//case：07127783 for mipi crc error
+/**
+ * struct cam_isp_hw_error_event_info:
+ *
+ * @brief:              Structure to pass error event details to hw mgr
+ *
+ * @err_type:           Type of error being reported
+ *
+ */
+struct cam_isp_hw_error_event_info {
+	uint32_t    err_type;
+};
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+
 /*
  * struct cam_isp_hw_event_info:
  *
@@ -218,7 +233,9 @@ struct cam_isp_blanking_config {
  * @hw_idx:         IFE hw index
  * @err_type:       Error type if any
  * @reg_val:        Any critical register value captured during irq handling
+ * @hw_type:           Hw Type sending the event
  * @evt_param       Specific info about frame
+ * @event_data:        Any additional data specific to this event
  */
 struct cam_isp_hw_event_info {
 	enum cam_isp_resource_type     res_type;
@@ -227,6 +244,11 @@ struct cam_isp_hw_event_info {
 	uint32_t                       err_type;
 	uint32_t                       reg_val;
 	uint32_t                       evt_param;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	uint32_t                       hw_type;
+	void                          *event_data;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 };
 
 /*

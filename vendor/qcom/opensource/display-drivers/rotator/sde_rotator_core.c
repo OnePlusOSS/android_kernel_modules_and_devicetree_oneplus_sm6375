@@ -2123,6 +2123,46 @@ static int sde_rotator_add_request(struct sde_rot_mgr *mgr,
 	return 0;
 }
 
+static void sde_rotator_complete_hwactive_job(struct sde_rot_mgr *mgr,
+	struct sde_rot_entry_container *req)
+{
+	struct kthread_work *commit_work;
+	struct kthread_work *done_work;
+	struct sde_rot_entry *entry;
+	struct sde_rot_hw_resource *hw;
+	struct sde_rot_queue *queue;
+	int i;
+
+	if (!mgr || !req) {
+		SDEROT_ERR("invalid params\n");
+		return;
+	}
+
+	for (i = 0; i < req->count; i++) {
+		entry = &req->entries[i];
+		if (!entry)
+			continue;
+
+		queue = entry->commitq;
+		if (!queue || !queue->hw)
+			continue;
+
+		commit_work = &entry->commit_work;
+		done_work = &entry->done_work;
+		hw = queue->hw;
+		SDEROT_EVTLOG(req->count, atomic_read(&req->pending_count),
+		atomic_read(&hw->num_active));
+		if (atomic_read(&hw->num_active)) {
+			sde_rot_mgr_unlock(mgr);
+			kthread_flush_work(commit_work);
+			kthread_flush_work(done_work);
+			sde_rot_mgr_lock(mgr);
+		}
+		SDEROT_EVTLOG(req->count, atomic_read(&req->pending_count),
+		atomic_read(&hw->num_active));
+	}
+}
+
 void sde_rotator_remove_request(struct sde_rot_mgr *mgr,
 	struct sde_rot_file_private *private,
 	struct sde_rot_entry_container *req)
@@ -2146,6 +2186,12 @@ static void sde_rotator_cancel_request(struct sde_rot_mgr *mgr,
 	struct sde_rot_entry *entry;
 	int i;
 
+	/*
+	* Flush any active works before issuing
+	* a cancel work.
+	*/
+	sde_rotator_complete_hwactive_job(mgr, req);
+
 	if (atomic_read(&req->pending_count)) {
 		/*
 		 * To avoid signal the rotation entry output fence in the wrong
@@ -2153,6 +2199,7 @@ static void sde_rotator_cancel_request(struct sde_rot_mgr *mgr,
 		 * canceled first, before signaling the output fence.
 		 */
 		SDEROT_DBG("cancel work start\n");
+		SDEROT_EVTLOG(atomic_read(&req->pending_count));
 		sde_rot_mgr_unlock(mgr);
 		for (i = req->count - 1; i >= 0; i--) {
 			entry = req->entries + i;

@@ -206,6 +206,7 @@
         tp_data_record_support;
         temperature_detect_shellback_support;
 	fingerprint_not_report_in_suspend;
+	fp_disable_after_resume;
 
         /*
             *Virtual Key Config:

@@ -1890,8 +1890,8 @@ retry:
 	}
 
 	payload_length = syna_pal_le2_to_uint(&data[1]);
-	LOGE("Command = 0x%02x, payload length = %d\n",
-		data[0], payload_length);
+	LOGE("Command = 0x%02x, payload length = %d data:%*ph\n",
+		data[0], payload_length, payload_length, &data[3]);
 
 	if (g_sysfs_io_polling_interval == RESP_IN_ATTN)
 		delay_ms_resp = RESP_IN_ATTN;
@@ -1909,6 +1909,9 @@ retry:
 			syna_dev_update_lpwg_status(tcm);
 			syna_sysfs_set_fingerprint_prepare(tcm);
 			LOGE("HBP set touch_and_hold(0x%04x)\n", tcm->touch_and_hold);
+			if (tcm->touch_and_hold) {
+				tcm->is_fp_down = false;
+			}
 		}
 	}
 

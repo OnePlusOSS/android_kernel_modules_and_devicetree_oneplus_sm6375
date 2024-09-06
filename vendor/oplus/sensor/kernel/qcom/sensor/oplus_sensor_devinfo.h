@@ -24,8 +24,8 @@
 #define SMEM_SENSOR 130
 
 #define REG_NUM 10
-#define PARAMETER_NUM 30
-#define FEATURE_NUM 10
+#define PARAMETER_NUM 31
+#define FEATURE_NUM 12
 #define SOURCE_NUM 2
 #define PANEL_SOURCE_NUM 2
 #define ALGO_PARAMETER_NUM 15

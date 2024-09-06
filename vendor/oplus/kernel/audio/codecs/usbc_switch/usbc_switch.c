@@ -113,6 +113,36 @@ static int usbc_switch_usbc_event_changed_psupply(struct usbc_switch_priv *swh_p
 	return 0;
 }
 
+#if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+static int g_usbc_event_cnt = 0;
+static int g_audio_event_cnt = 0;
+int get_usbc_event_cnt(void)
+{
+	return g_usbc_event_cnt;
+}
+EXPORT_SYMBOL(get_usbc_event_cnt);
+
+void clear_usbc_event_cnt(void)
+{
+	g_usbc_event_cnt = 0;
+}
+EXPORT_SYMBOL(clear_usbc_event_cnt);
+
+int get_usbc_audio_event_cnt(void)
+{
+	return g_audio_event_cnt;
+}
+EXPORT_SYMBOL(get_usbc_audio_event_cnt);
+
+void clear_usbc_audio_event_cnt(void)
+{
+	g_audio_event_cnt = 0;
+}
+EXPORT_SYMBOL(clear_usbc_audio_event_cnt);
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+#endif
+
 static int usbc_switch_usbc_event_changed_ucsi(struct usbc_switch_priv *swh_priv,
 				      unsigned long evt, void *ptr)
 {
@@ -133,6 +163,12 @@ static int usbc_switch_usbc_event_changed_ucsi(struct usbc_switch_priv *swh_priv
 	} else {
 		acc = TYPEC_ACCESSORY_NONE;
 	}
+
+#if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	g_usbc_event_cnt++;
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+#endif
 
 	if (!swh_priv)
 		return -EINVAL;
@@ -266,6 +302,11 @@ static int usbc_switch_setup_switches(struct usbc_switch_priv *swh_priv)
 	switch (mode) {
 	case TYPEC_ACCESSORY_AUDIO:
 		/* notify call chain on event */
+		#if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
+		#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+			g_audio_event_cnt++;
+		#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+		#endif
 		blocking_notifier_call_chain(&swh_priv->usbc_switch_notifier,
 					mode, NULL);
 		if (gpio_is_valid(swh_priv->hs_det_pin)) {
@@ -274,6 +315,11 @@ static int usbc_switch_setup_switches(struct usbc_switch_priv *swh_priv)
 		}
 		break;
 	case TYPEC_ACCESSORY_NONE:
+		#if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
+		#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+			g_audio_event_cnt++;
+		#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+		#endif
 		if (gpio_is_valid(swh_priv->hs_det_pin)) {
 			dev_info(dev, "%s: set hs_det_pin to high.\n", __func__);
 			gpio_direction_output(swh_priv->hs_det_pin, 1);

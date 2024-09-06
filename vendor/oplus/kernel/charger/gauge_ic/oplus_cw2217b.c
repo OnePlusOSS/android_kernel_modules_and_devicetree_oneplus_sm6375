@@ -17,6 +17,7 @@
 #include <linux/version.h>
 #include <linux/sizes.h>
 #include <linux/iio/consumer.h>
+#include <linux/of.h>
 #include "../oplus_charger.h"
 #include "../oplus_gauge.h"
 #include "oplus_cw2217b.h"
@@ -96,6 +97,54 @@ static int cw_write_profile(struct i2c_client *client, unsigned char const buf[]
 	}
 
 	return ret;
+}
+
+static int cw2217_parse_dt(struct cw_battery *cw_bat)
+{
+	struct device_node *node = cw_bat->dev->of_node;
+	int rc = 0;
+	int length = 0;
+
+	rc = of_property_read_u32(node, "qcom,cw_ui_full", &cw_bat->cw_ui_full);
+	if (rc) {
+		cw_bat->cw_ui_full = 100;
+		chg_err("cw_ui_full: %d\n", cw_bat->cw_ui_full);
+	} else {
+		chg_err("cw_ui_full: %d\n", cw_bat->cw_ui_full);
+	}
+
+	cw_bat->cw_switch_config_profile = of_property_read_bool(node, "qcom,cw_switch_config_profile");
+	chg_err("cw_switch_config_profile: %d\n", cw_bat->cw_switch_config_profile);
+
+	rc = of_property_read_u32(node, "qcom,cw_user_rsense", &cw_bat->cw_user_rsense);
+        if (rc) {
+                cw_bat->cw_user_rsense = 2000;
+                chg_err("cw_user_rsense: %d\n", cw_bat->cw_user_rsense);
+        } else {
+                chg_err("cw_user_rsense: %d\n", cw_bat->cw_user_rsense);
+        }
+
+	rc = of_property_count_elems_of_size(node, "qcom,config_profile_data", sizeof(u8));
+	chg_err("of_property_count_elems_of_size rc=%d\n", rc);
+	if (rc < 0) {
+		chg_err("Count config_profile_data failed, rc=%d\n", rc);
+		return rc;
+	}
+
+	length = rc;
+	if (length != SIZE_OF_PROFILE) {
+		chg_err("Wrong entry(%d), only %d allowed\n", length, SIZE_OF_PROFILE);
+		return NUM_0;
+	}
+
+	rc = of_property_read_u8_array(node, "qcom,config_profile_data",
+	                                cw_bat->cw_config_profile,
+	                                length);
+	if (rc < 0) {
+		chg_err("parse config_profile_data failed, rc=%d\n", rc);
+		return rc;
+	}
+	return NUM_0;
 }
 
 /*
@@ -215,7 +264,7 @@ static int cw_get_capacity(struct cw_battery *cw_bat)
 {
 	int ret;
 	unsigned char reg_val[CW_REG_WORD] = { NUM_0, NUM_0 };
-	int ui_100 = CW_UI_FULL;
+	int ui_100 = cw_bat->cw_ui_full;
 	int soc_h;
 	int soc_l;
 	int ui_soc;
@@ -302,7 +351,7 @@ static int cw_get_current(struct cw_battery *cw_bat)
 
 	current_reg = (reg_val[NUM_0] << CW_REG_BYTE_BITS) + reg_val[NUM_1];
 	cw_current = get_complement_code(current_reg);
-	cw_current = cw_current  * CW_CUR_MAGIC_PART1 / USER_RSENSE / CW_CUR_MAGIC_PART2;
+	cw_current = cw_current  * CW_CUR_MAGIC_PART1 / cw_bat->cw_user_rsense / CW_CUR_MAGIC_PART2;
 	cw_bat->cw_current = cw_current;
 
 	return NUM_0;
@@ -417,7 +466,11 @@ static int cw_config_start_ic(struct cw_battery *cw_bat)
 		return ret;
 
 	/* update new battery info */
-	ret = cw_write_profile(cw_bat->client, config_profile_info);
+	if (cw_bat->cw_switch_config_profile) {
+		ret = cw_write_profile(cw_bat->client, cw_bat->cw_config_profile);
+	} else {
+		ret = cw_write_profile(cw_bat->client, config_profile_info);
+	}
 	if (ret < NUM_0)
 		return ret;
 
@@ -481,8 +534,13 @@ static int cw2217_get_state(struct cw_battery *cw_bat)
 			return ret;
 		reg_profile = REG_BAT_PROFILE + i;
 		chg_err("0x%2x = 0x%2x\n", reg_profile, reg_val);
-		if (config_profile_info[i] != reg_val)
-			break;
+		if (cw_bat->cw_switch_config_profile) {
+			if (cw_bat->cw_config_profile[i] != reg_val)
+				break;
+		} else {
+			if (config_profile_info[i] != reg_val)
+				break;
+		}
 	}
 	if (i != SIZE_OF_PROFILE)
 		return CW2217_PROFILE_NEED_UPDATE;
@@ -579,7 +637,7 @@ static int cw2217_get_battery_temperature(void)
 
 static int cw2217_get_batt_remaining_capacity(void)
 {
-        return g_cw_bat->ui_soc * RATED_CAPACITY / CW_UI_FULL;
+	return g_cw_bat->ui_soc * RATED_CAPACITY / g_cw_bat->cw_ui_full;
 }
 
 static int cw2217_get_battery_soc(void)
@@ -759,6 +817,7 @@ static int cw2217_probe(struct i2c_client *client, const struct i2c_device_id *i
 	cw_bat->dev = &client->dev;
 	i2c_set_clientdata(client, cw_bat);
 	cw_bat->client = client;
+	cw2217_parse_dt(cw_bat);
 
 	ret = cw_init(cw_bat);
 	while ((loop++ < CW_RETRY_COUNT) && (ret != 0)) {

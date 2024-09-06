@@ -161,6 +161,10 @@
 		sc,ibat-ocp = <1>;    /* 0:12A , 1:16A */
 		sc,charge-detect-enable;
 		sc,disable-qc;
+		sc,cc_pull_up_idrive = <0x09>;
+		sc,cc_pull_down_idrive = <0x44>;
+		sc,continuous_time = <0x4E>;
+		sc,bmc_width = <0x86 0x3d 0x3b 0x10>;
 
 		/*
 		 * Charger name
@@ -425,7 +429,6 @@
 		rt-tcpc,rp_level = <0>; /* 0: Default, 1: 1.5, 2: 3.0 */
 		rt-tcpc,vconn_supply  = <1>;  /* 0: Never, 1: Always, */
 					      /* 2: EMarkOnly, 3: StartOnly */
-		rt-tcpc,notifier_supply_num = <2>;
 		/* rt-tcpc,disable_pe; */
 		rt1711pd,intr_gpio = <&tlmm 124 0x0>;
 		rt1711pd,intr_gpio_num = <124>;
@@ -611,8 +614,8 @@
  	oplus,ufcs_full_normal_sw_vbat_third= <4470>;
  	oplus,ufcs_full_normal_hw_vbat_third = <4480>;
 	oplus,ufcs_freq_mincore = <1113600>;
- 	oplus,ufcs_freq_midcore = <1804800>;
- 	oplus,ufcs_freq_maxcore = <1804800>;
+	oplus,ufcs_freq_midcore = <1651200>;
+	oplus,ufcs_freq_maxcore = <1651200>;
  	oplus,ufcs_current_change_timeout = <100>;
  	oplus,ufcs_r_default = <95 45 10 45 20 20 20>;
  	oplus,ufcs_rmos_mohm = <5>;
@@ -1391,7 +1394,7 @@
 		oplus,support_hot_enter_kpoc;
 		oplus,poweroff_high_batt_temp = <720>;
 		oplus,poweroff_emergency_batt_temp = <770>;
-		oplus,usbtemp_batt_temp_over_hot = <65>;
+		oplus,usbtemp_batt_temp_over_hot = <60>;
 		oplus,usbtemp_temp_gap_with_batt_temp_in_over_hot = <15>;
 	};
 };

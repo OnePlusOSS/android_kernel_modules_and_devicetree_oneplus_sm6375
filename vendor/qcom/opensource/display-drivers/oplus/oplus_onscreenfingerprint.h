@@ -149,6 +149,7 @@ struct oplus_ofp_params {
 	ktime_t aod_off_cmd_timestamp;					/* record aod off cmds timestamp for aod off hbm on delay judgment */
 	unsigned int aod_light_mode;					/* aod brightness setting, 0:50nit, 1:10nit */
 	bool ultra_low_power_aod_state;					/* indicates whether panel is ultra low power aod state or not */
+	bool demura_reset_after_hbm_off;				/* indicates whether the current hbm status sends demura */
 	unsigned int ultra_low_power_aod_mode;			/* indicates whether ultra low power aod mode needs to be entered or not */
 	struct workqueue_struct *aod_display_on_set_wq;	/* a workqueue used to send display on(29) cmd after image data write before aod on */
 	struct work_struct aod_display_on_set_work;		/* a work struct used to send display on(29) cmd after image data write before aod on */

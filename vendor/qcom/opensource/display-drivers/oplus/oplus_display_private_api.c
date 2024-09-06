@@ -96,7 +96,7 @@ EXPORT_SYMBOL(oplus_dimlayer_bl_enable);
 EXPORT_SYMBOL(oplus_dsi_log_type);
 EXPORT_SYMBOL(oplus_display_trace_enable);
 EXPORT_SYMBOL(backlight_smooth_enable);
-
+int shutdown_flag = 0;
 extern PANEL_VOLTAGE_BAK panel_vol_bak[PANEL_VOLTAGE_ID_MAX];
 extern u32 panel_pwr_vg_base;
 extern int seed_mode;
@@ -2662,6 +2662,27 @@ static ssize_t oplus_display_set_trace_enable_attr(struct kobject *obj,
 
 	return count;
 }
+
+static ssize_t oplus_get_shutdownflag(struct kobject *obj,
+		struct kobj_attribute *attr, char *buf)
+{
+	printk(KERN_INFO "get shutdown_flag = %d\n", shutdown_flag);
+	return sprintf(buf, "%d\n", shutdown_flag);
+}
+
+static ssize_t oplus_set_shutdownflag(struct kobject *obj,
+		struct kobj_attribute *attr,
+		const char *buf, size_t count)
+{
+	int flag = 0;
+	sscanf(buf, "%du", &flag);
+	if (1 == flag) {
+		shutdown_flag = 1;
+	}
+	pr_err("shutdown_flag = %d\n", shutdown_flag);
+	return count;
+}
+
 static struct kobject *oplus_display_kobj;
 
 static OPLUS_ATTR(audio_ready, S_IRUGO | S_IWUSR, NULL,
@@ -2749,6 +2770,7 @@ static OPLUS_ATTR(notify_fppress, S_IRUGO | S_IWUSR, NULL, oplus_ofp_notify_fp_p
 static OPLUS_ATTR(aod_light_mode_set, S_IRUGO | S_IWUSR, oplus_ofp_get_aod_light_mode_attr, oplus_ofp_set_aod_light_mode_attr);
 static OPLUS_ATTR(ultra_low_power_aod_mode, S_IRUGO | S_IWUSR, oplus_ofp_get_ultra_low_power_aod_mode_attr, oplus_ofp_set_ultra_low_power_aod_mode_attr);
 #endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
+static OPLUS_ATTR(shutdownflag, S_IRUGO | S_IWUSR, oplus_get_shutdownflag, oplus_set_shutdownflag);
 
 /*
  * Create a group of attributes so that we can create and destroy them all
@@ -2809,6 +2831,7 @@ static struct attribute *oplus_display_attrs[] = {
 	&oplus_attr_aod_light_mode_set.attr,
 	&oplus_attr_ultra_low_power_aod_mode.attr,
 #endif /* OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT */
+	&oplus_attr_shutdownflag.attr,
 	NULL,	/* need to NULL terminate the list of attributes */
 };
 

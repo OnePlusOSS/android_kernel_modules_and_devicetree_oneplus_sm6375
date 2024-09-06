@@ -2640,7 +2640,7 @@ static u32 ft3681_u32_trigger_reason(void *chip_data, int gesture_enable,
 	}
 
 	if ((touch_buf[1] == 0xFF) && (touch_buf[2] == 0xFF)
-	    && (touch_buf[3] == 0xFF)) {
+	    && (touch_buf[3] == 0xFF) && !CHK_BIT(result_event, IRQ_PALM)) {
 		TPD_INFO("Need recovery TP state");
 		return IRQ_FW_AUTO_RESET;
 	}

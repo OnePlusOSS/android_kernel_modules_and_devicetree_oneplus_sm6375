@@ -139,6 +139,7 @@
 			reg = <0x47>;
 			qcom,slave-id = <0x47 0x00 0x30>;
 			qcom,flash-name = "i2c_flash";
+			qcom,flash-project = <23881>;
 			qcom,flash-type = <1>;
 			cam_clk-supply = <&gcc_camss_top_gdsc>;
 			regulator-names = "cam_clk";

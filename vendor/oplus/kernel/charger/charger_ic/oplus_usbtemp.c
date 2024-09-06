@@ -14,6 +14,7 @@
 #include "../oplus_charger.h"
 #include "../oplus_gauge.h"
 #include "../oplus_vooc.h"
+#include "../vooc_ic/oplus_vooc_fw.h"
 #include "../oplus_ufcs.h"
 #include "../oplus_pps.h"
 
@@ -103,7 +104,6 @@ static struct timespec current_kernel_time(void)
 }
 #endif
 
-extern bool oplus_is_power_off_charging(struct oplus_vooc_chip *chip);
 void oplus_usbtemp_recover_func(struct oplus_chg_chip *chip);
 
 void oplus_set_usb_temp_high(struct oplus_chg_chip *chip)

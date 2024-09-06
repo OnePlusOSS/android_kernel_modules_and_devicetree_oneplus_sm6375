@@ -12,6 +12,10 @@
 #include <linux/extcon-provider.h>
 #include "wcdcal-hwdep.h"
 #include <sound/jack.h>
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+#include <linux/pm_wakeup.h>
+#define HEADSET_ERR_FB_VERSION    "1.0.0"
+#endif
 
 #define TOMBAK_MBHC_NC	0
 #define TOMBAK_MBHC_NO	1
@@ -695,7 +699,14 @@ struct wcd_mbhc {
 	#if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
 	unsigned int usbc_insert_pin;
 	bool usbc_analog_status;
+	#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	struct delayed_work check_count_dwrok;
+	#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 	#endif
+	#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	struct delayed_work hp_irq_chk_work;
+	struct wakeup_source *hp_wake_lock;
+	#endif /* OPLUS_FEATURE_MM_FEEDBACK */
 };
 
 void wcd_mbhc_find_plug_and_report(struct wcd_mbhc *mbhc,

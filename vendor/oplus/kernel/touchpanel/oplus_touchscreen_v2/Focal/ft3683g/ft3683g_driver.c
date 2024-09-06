@@ -10,6 +10,7 @@
 #include <linux/err.h>
 #include <linux/thermal.h>
 #include "ft3683g_core.h"
+#include "../../touchpanel_healthinfo/touchpanel_exception.h"
 
 struct chip_data_ft3683g *g_fts_data = NULL;
 
@@ -64,6 +65,7 @@ struct chip_data_ft3683g *g_fts_data = NULL;
 #define FTS_CMD_SET_RFLASH_ADDR                     0xAC
 #define FTS_RETRIES_WRITE                           100
 #define FTS_RETRIES_DELAY_WRITE                     1
+#define FTS_REG_RESET_REASON                        0xC4
 
 #define FTS_CMD_FLASH_STATUS_NOP                    0x0000
 #define FTS_CMD_FLASH_STATUS_ECC_OK                 0xF055
@@ -2614,6 +2616,16 @@ static void fts_read_aod_info(struct chip_data_ft3683g *ts_data)
 	ts_data->aod_info.aod_y = (val[4] << 8) + val[5];
 }
 
+static u8 fts_chip_get_reset_reason(struct chip_data_ft3683g *ts_data)
+{
+	int ret = 0;
+	u8 reset_reason = 0;
+
+	ret = fts_read_reg(FTS_REG_RESET_REASON, &reset_reason);
+	TPD_INFO("reset_reason: %d", reset_reason);
+	return reset_reason;
+}
+
 static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
                                   int is_suspended)
 {
@@ -2629,6 +2641,7 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 	int sc_num = tx_num + rx_num;
 	int j = 0;
 	int offect = 0;
+	u8 reset_reason = 0;
 
 	fts_prc_queue_work(ts_data);
 
@@ -2636,6 +2649,12 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 		ret = fts_read_reg(FTS_REG_GESTURE_EN, &val);
 		if (val == 0x01) {
 			return IRQ_GESTURE;
+		} else {
+			TPD_INFO("gesture not enable in fw, don't process gesture");
+			reset_reason = fts_chip_get_reset_reason(ts_data);
+			if (reset_reason != FTS_RST_REASON_UNKNOWN && reset_reason != FTS_RST_REASON_FWUPDATE) {
+				tp_exception_report(&ts_data->ts->exception_data, EXCEP_GESTURE, "gesture not enable", sizeof("gesture not enable"));
+			}
 		}
 	}
 
@@ -2659,6 +2678,8 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 
 			if (val == 0x01) {
 				return IRQ_GESTURE;
+			} else {
+				TPD_INFO("gesture not enable in fw, don't process gesture");
 			}
 		}
 		ret = fts_read(&cmd, 1, &touch_buf[0], ts_data->touch_size);
@@ -2677,6 +2698,8 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 
 			if (val == 0x01) {
 				return IRQ_GESTURE;
+			} else {
+				TPD_INFO("gesture not enable in fw, don't process gesture");
 			}
 		}
 

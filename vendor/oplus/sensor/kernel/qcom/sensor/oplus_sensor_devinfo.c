@@ -212,6 +212,7 @@ static void parse_proximity_sensor_dts(struct sensor_hw* hw, struct device_node 
 		"force_cali_limit",
 		"cali_jitter_limit",
 		"cal_offset_margin",
+                "is_ps_dri",
 	};
 	rc = of_property_read_u32(ch_node, "ps-type", &value);
 
@@ -282,7 +283,9 @@ static void parse_light_sensor_dts(struct sensor_hw* hw, struct device_node *ch_
 		"normalization_value",
 		"use_lb_algo",
 		"para-matrix",
-		"als_ratio_type"
+		"als_ratio_type",
+		"als_polling_timer",
+		"is_distinguish_screens"
 	};
 
 	char *light_para[] = {
@@ -311,15 +314,15 @@ static void parse_light_sensor_dts(struct sensor_hw* hw, struct device_node *ch_
 		"ir_coef_val_4",
 		/*lb para end*/
 		"polling_use_majority",
-		"als_polling_timer",
+		"k43",
 		"k51",
 		"k52",
 		"k53",
 		"k61",
 		"k62",
-		"k63"
+		"k63",
+		"lcd_name"
 	};
-
 	for (di = 0; di < ARRAY_SIZE(als_feature); di++) {
 		rc = of_property_read_u32(ch_node, als_feature[di], &value);
 
@@ -335,19 +338,47 @@ static void parse_light_sensor_dts(struct sensor_hw* hw, struct device_node *ch_
 
 		SENSOR_DEVINFO_DEBUG("light feature[%s] : %d\n", als_feature[di], hw->feature.feature[di]);
 	}
+	if (of_property_read_u32(ch_node, "is_distinguish_screens", &value)) {
+		for (di = 0; di < ARRAY_SIZE(light_para); di++) {
+			rc = of_property_read_u32(ch_node, light_para[di], &value);
 
-	for (di = 0; di < ARRAY_SIZE(light_para); di++) {
-		rc = of_property_read_u32(ch_node, light_para[di], &value);
-
-		if (!rc) {
-			hw->feature.parameter[di] = value;
-		} else if (0 == strncmp(light_para[di], "gold-reset-scale", strlen("gold-reset-scale"))) {
-			hw->feature.parameter[di] = 1001; /*set defaut value 1001*/
-		} else {
-			hw->feature.parameter[di] = 0; /*set defaut param*/
-			pr_info("parse %s failed!", light_para[di]);
+			if (!rc) {
+				hw->feature.parameter[di] = value;
+			} else if (0 == strncmp(light_para[di], "gold-reset-scale", strlen("gold-reset-scale"))) {
+				hw->feature.parameter[di] = 1001; /*set defaut value 1001*/
+			} else {
+				hw->feature.parameter[di] = 0; /*set defaut param*/
+				pr_info("parse %s failed!", light_para[di]);
+			}
+			SENSOR_DEVINFO_DEBUG("light_para[%s] : %d\n", light_para[di], hw->feature.parameter[di]);
 		}
-		SENSOR_DEVINFO_DEBUG("light_para[%s] : %d\n", light_para[di], hw->feature.parameter[di]);
+	} else {
+		struct device_node *node = ch_node;
+		struct device_node *ch_node_lcd_num = NULL;
+		char *lcd_name = NULL;
+		for_each_child_of_node(node, ch_node_lcd_num) {
+				if (ch_node_lcd_num == NULL) {
+					SENSOR_DEVINFO_DEBUG(" not have ch_node_lcd_num");
+					return;
+				}
+				rc = of_property_read_string(ch_node_lcd_num, "lcd_name", (const char **)&lcd_name);
+				pr_err("enter child_node lcd_name = %s\n", lcd_name);
+				if (strstr(sns_dsi_display_primary, lcd_name)) {
+					for (di = 0; di < ARRAY_SIZE(light_para); di++) {
+						rc = of_property_read_u32(ch_node_lcd_num, light_para[di], &value);
+
+						if (!rc) {
+							hw->feature.parameter[di] = value;
+						} else if (0 == strncmp(light_para[di], "gold-reset-scale", strlen("gold-reset-scale"))) {
+							hw->feature.parameter[di] = 1001; /*set defaut value 1001*/
+						} else {
+							hw->feature.parameter[di] = 0; /*set defaut param*/
+							pr_info("parse %s failed!", light_para[di]);
+						}
+						SENSOR_DEVINFO_DEBUG("light_para[%s] : %d\n", light_para[di], hw->feature.parameter[di]);
+					}
+				}
+		}
 	}
 }
 static void parse_light_rear_sensor_dts(struct sensor_hw* hw, struct device_node *ch_node)

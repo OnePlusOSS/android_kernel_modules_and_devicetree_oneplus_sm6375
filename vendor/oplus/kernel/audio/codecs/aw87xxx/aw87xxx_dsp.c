@@ -130,11 +130,12 @@ failed:
 
 /******************qcom dsp communication function start**********************/
 #ifdef AW_QCOM_OPEN_DSP_PLATFORM
+/*
 static void aw_check_dsp_ready(void)
 {
 
 	return;
-/*
+
 	int ret;
 
 	ret = afe_get_topology(g_rx_port_id);
@@ -142,8 +143,9 @@ static void aw_check_dsp_ready(void)
 
 	if (ret != g_rx_topo_id)
 		AW_LOGE("topo id 0x%x", ret);
-*/
+
 }
+*/
 
 static int aw_qcom_write_data_to_dsp(int32_t param_id,
 				void *data, int data_size)
@@ -152,14 +154,16 @@ static int aw_qcom_write_data_to_dsp(int32_t param_id,
 
 	AW_LOGI("enter");
 	return ret;
+/*
 	mutex_lock(&g_dsp_lock);
 	aw_check_dsp_ready();
-	/*
+
 	ret = aw_send_afe_cal_apr(param_id, data,
 		data_size, true);
-	*/
+
 	mutex_unlock(&g_dsp_lock);
 	return ret;
+*/
 }
 
 static int aw_qcom_read_data_from_dsp(int32_t param_id,
@@ -169,14 +173,16 @@ static int aw_qcom_read_data_from_dsp(int32_t param_id,
 
 	AW_LOGI("enter");
 	return ret;
+/*
 	mutex_lock(&g_dsp_lock);
 	aw_check_dsp_ready();
-	/*
+
 	ret = aw_send_afe_cal_apr(param_id, data,
 			data_size, false);
-	*/
+
 	mutex_unlock(&g_dsp_lock);
 	return ret;
+*/
 }
 
 #endif

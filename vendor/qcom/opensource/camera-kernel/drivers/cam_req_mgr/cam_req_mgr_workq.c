@@ -11,6 +11,9 @@
 struct sched_param {
 	int sched_priority;
 };
+
+#define SET_RTTHREAD_PROTITY(func, flags, para) \
+  sched_##func(current, flags, para)
 #endif
 
 #define WORKQ_ACQUIRE_LOCK(workq, flags) {\
@@ -32,7 +35,7 @@ static int cam_req_mgr_thread(void *data)
 {
 	struct cam_req_mgr_core_workq *workq = (struct cam_req_mgr_core_workq *)data;
 	struct sched_param param = { .sched_priority = 1 };//prio=98
-	sched_setscheduler_nocheck(current, SCHED_FIFO, &param);
+	SET_RTTHREAD_PROTITY(setscheduler_nocheck, SCHED_FIFO, &param);
 	set_current_state(TASK_INTERRUPTIBLE);
 	schedule();
 

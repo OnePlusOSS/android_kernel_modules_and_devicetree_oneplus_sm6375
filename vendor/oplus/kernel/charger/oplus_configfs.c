@@ -899,7 +899,7 @@ static ssize_t mmi_charging_enable_store(struct device *dev, struct device_attri
 			if (oplus_voocphy_get_bidirect_cp_support()) {
 				oplus_voocphy_set_chg_auto_mode(false);
 			}
-			if (!chip->otg_online)
+			if (!chip->otg_online && !oplus_vooc_get_fastchg_started())
 				oplus_chg_turn_on_charging_in_work();
 			if (oplus_chg_get_voocphy_support() == ADSP_VOOCPHY) {
 				oplus_adsp_voocphy_turn_on();

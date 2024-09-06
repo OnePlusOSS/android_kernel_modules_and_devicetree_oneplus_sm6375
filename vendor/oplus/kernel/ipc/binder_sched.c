@@ -1228,44 +1228,51 @@ static struct task_struct *get_current_async_thread(struct binder_transaction *t
 	return NULL;
 }
 
+static bool is_allow_sf_binder_ux(struct task_struct *task)
+{
+	if (!task)
+		return false;
+	if (strcmp(task->comm, "surfaceflinger") == 0)
+		return true;
+	return false;
+}
+
 /* need to double check whether set the same task ux twice is ok or not */
 static bool check_sf_thread_async_ux(struct task_struct *task,
 	struct binder_transaction *t, struct oplus_binder_struct *obs)
 {
-	struct oplus_task_struct *ots = NULL;
 	struct task_struct *grp_leader = NULL;
 	static int sf_async_ux = 0, sf_sync_ux = 0;
 	bool set_sync_ux = false;
+	bool is_sf = false;
 
 	if (IS_ERR_OR_NULL(task)) {
 		return false;
 	}
 
+	is_sf = is_allow_sf_binder_ux(current);
 	/* old begin */
-		ots = get_oplus_task_struct(current);
 	grp_leader = task->group_leader;
-		if (grp_leader && !IS_ERR_OR_NULL(ots)) {
-			if ((ots->im_flag == IM_FLAG_SURFACEFLINGER) && test_task_ux(grp_leader)) {
-			if (is_obs_valid(obs) == OBS_VALID &&
-				(obs->async_ux_enable > ASYNC_UX_DISABLE && obs->async_ux_enable < ASYNC_UX_ENABLE_MAX)) {
-				set_sync_ux = false;
-				if (g_sched_debug & LOG_SET_SF_UX) {
-					sf_async_ux++;
-				}
-				trace_binder_ux_task(false, INVALID_VALUE, set_sync_ux, task, INVALID_VALUE,
-					t, NULL, "async_ux set SF async");
-				oplus_binder_debug(LOG_SET_SF_UX, "async current(%d) task(pid:%d tgid:%d comm:%s) sf_async:%d sf_sync: %d\n",
-					current->pid, task->pid, task->tgid, task->comm, sf_async_ux, sf_sync_ux);
-			} else {
-				set_sync_ux = true;
-				if (g_sched_debug & LOG_SET_SF_UX) {
-					sf_sync_ux++;
-				}
-				trace_binder_ux_task(false, INVALID_VALUE, set_sync_ux, task, INVALID_VALUE,
-					t, NULL, "async_ux set SF sync");
-				oplus_binder_debug(LOG_SET_SF_UX, "sync current(%d) ux_task(pid:%d tgid:%d comm:%s) sf_async:%d sf_sync: %d\n",
-					current->pid, task->pid, task->tgid, task->comm, sf_async_ux, sf_sync_ux);
+	if (grp_leader && is_sf && test_task_ux(grp_leader)) {
+		if (is_obs_valid(obs) == OBS_VALID &&
+			(obs->async_ux_enable > ASYNC_UX_DISABLE && obs->async_ux_enable < ASYNC_UX_ENABLE_MAX)) {
+			set_sync_ux = false;
+			if (g_sched_debug & LOG_SET_SF_UX) {
+				sf_async_ux++;
 			}
+			trace_binder_ux_task(false, INVALID_VALUE, set_sync_ux, task, INVALID_VALUE,
+				t, NULL, "async_ux set SF async");
+			oplus_binder_debug(LOG_SET_SF_UX, "async current(%d) task(pid:%d tgid:%d comm:%s) sf_async:%d sf_sync: %d\n",
+				current->pid, task->pid, task->tgid, task->comm, sf_async_ux, sf_sync_ux);
+		} else {
+			set_sync_ux = true;
+			if (g_sched_debug & LOG_SET_SF_UX) {
+				sf_sync_ux++;
+			}
+			trace_binder_ux_task(false, INVALID_VALUE, set_sync_ux, task, INVALID_VALUE,
+				t, NULL, "async_ux set SF sync");
+			oplus_binder_debug(LOG_SET_SF_UX, "sync current(%d) ux_task(pid:%d tgid:%d comm:%s) sf_async:%d sf_sync: %d\n",
+				current->pid, task->pid, task->tgid, task->comm, sf_async_ux, sf_sync_ux);
 		}
 	}
 	/* old end */

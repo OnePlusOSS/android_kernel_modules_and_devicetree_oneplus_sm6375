@@ -220,10 +220,15 @@ noinline
 #endif
 int oplus_gauge_get_batt_mvolts_2cell_max(void)
 {
-	if (!g_gauge_chip)
+	if (!g_gauge_chip) {
 		return 3800;
-	else
+	} else {
+		if (gauge_dbg_vbat != 0) {
+			chg_err("[OPLUS_CHG]%s:debug enabled,max voltage gauge_dbg_vbat[%d]\n", __func__, gauge_dbg_vbat);
+			return gauge_dbg_vbat;
+		}
 		return g_gauge_chip->gauge_ops->get_battery_mvolts_2cell_max();
+	}
 }
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_FAULT_INJECT_CHG)
@@ -231,10 +236,15 @@ noinline
 #endif
 int oplus_gauge_get_batt_mvolts_2cell_min(void)
 {
-	if (!g_gauge_chip)
+	if (!g_gauge_chip) {
 		return 3800;
-	else
+	} else {
+		if (gauge_dbg_vbat != 0) {
+			chg_err("[OPLUS_CHG]%s:debug enabled,min voltage gauge_dbg_vbat[%d]\n", __func__, gauge_dbg_vbat);
+			return gauge_dbg_vbat;
+		}
 		return g_gauge_chip->gauge_ops->get_battery_mvolts_2cell_min();
+	}
 }
 
 int oplus_gauge_get_batt_temperature(void)

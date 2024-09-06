@@ -941,9 +941,10 @@ EXPORT_SYMBOL(charger_manager_get_by_name);
 
 static int get_usb_type(struct mtk_charger *info)
 {
-	union power_supply_propval prop, prop2;
+	union power_supply_propval prop = {0};
+	union power_supply_propval prop2 = {0};
 	static struct power_supply *chg_psy;
-	int ret;
+	int ret = 0;
 
 	chg_psy = info->chg_psy;
 
@@ -2672,10 +2673,9 @@ static ssize_t enable_sc_store(
 	if (buf != NULL && size != 0) {
 		chr_err("[enable smartcharging] buf is %s\n", buf);
 		ret = kstrtoul(buf, 10, &val);
-		if (val < 0) {
+		if (ret < 0) {
 			chr_err(
-				"[enable smartcharging] val is %d ??\n",
-				(int)val);
+				"[enable smartcharging] ret is %d ??\n", ret);
 			val = 0;
 		}
 
@@ -4335,6 +4335,53 @@ int oplus_get_adapter_svid(void)
 	}
 
 	return 0;
+}
+
+#define OPLUS_MIN_PDO_VOL 5000
+#define OPLUS_MIN_PDO_CUR 3000
+int oplus_pps_pd_exit(void)
+{
+	int ret = -1;
+	int vbus_mv_t = OPLUS_MIN_PDO_VOL;
+	int ibus_ma_t = OPLUS_MIN_PDO_CUR;
+
+	struct oplus_chg_chip *chip = g_oplus_chip;
+	struct tcpc_device *tcpc = NULL;
+
+	if (chip == NULL) {
+		chg_err("no oplus_chg_chip");
+		return -ENODEV;
+	}
+
+	if(chip->chg_ops->check_chrdet_status) {
+		if (chip->chg_ops->check_chrdet_status() == false)
+			return ret;
+	}
+
+	tcpc = tcpc_dev_get_by_name("type_c_port0");
+	if (tcpc == NULL) {
+		chg_err("get type_c_port0 fail");
+		return -EINVAL;
+	}
+
+	ret = tcpm_set_pd_charging_policy(tcpc, DPM_CHARGING_POLICY_VSAFE5V, NULL);
+
+	ret = tcpm_dpm_pd_request(tcpc, vbus_mv_t, ibus_ma_t, NULL);
+	if (ret != TCPM_SUCCESS) {
+		chg_err("tcpm_dpm_pd_request fail");
+		return -EINVAL;
+	}
+
+	ret = tcpm_inquire_pd_contract(tcpc, &vbus_mv_t, &ibus_ma_t);
+	if (ret != TCPM_SUCCESS) {
+		chg_err("inquire current vbus_mv and ibus_ma fail");
+		return -EINVAL;
+	}
+
+	msleep(100);
+	chg_err("PD Default vbus_mv[%d], ibus_ma[%d]", vbus_mv_t, ibus_ma_t);
+
+	return ret;
 }
 
 static void oplus_chg_pps_get_source_cap(struct mtk_charger *info)

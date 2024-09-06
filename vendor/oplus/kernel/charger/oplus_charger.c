@@ -8240,6 +8240,7 @@ static void oplus_chg_variables_init(struct oplus_chg_chip *chip)
 	chip->tbatt_normal_pre_shake = TBATT_PRE_SHAKE_INVALID;
 	chip->led_on = true;
 	chip->camera_on = 0;
+	chip->camera_on_pre = 0;
 	chip->stop_voter = 0x00;
 	chip->charging_state = CHARGING_STATUS_CCCV;
 	chip->mmi_chg = 1;
@@ -11894,7 +11895,7 @@ static void oplus_chg_pd_stage1(struct oplus_chg_chip *chip)
 			} else if (chip->cool_down_force_5v == false &&
 			    (chip->limits.tbatt_pdqc_to_5v_thr < 0 ||
 			    (chip->limits.tbatt_pdqc_to_5v_thr > 0 &&
-			    chip->temperature <= chip->limits.tbatt_pdqc_to_5v_thr))) {
+			    chip->temperature <= chip->limits.tbatt_pdqc_to_5v_thr)) && !chip->camera_on_pre) {
 				chip->chg_ops->oplus_chg_pd_setup();
 				oplus_chg_turn_on_pd(chip);
 			}

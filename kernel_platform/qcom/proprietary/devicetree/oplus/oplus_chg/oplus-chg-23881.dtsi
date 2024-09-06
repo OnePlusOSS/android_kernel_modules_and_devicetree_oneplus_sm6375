@@ -164,6 +164,10 @@
 		sc,ibat-ocp = <1>;    /* 0:12A , 1:16A */
 		sc,charge-detect-enable;
 		sc,disable-qc;
+		sc,cc_pull_up_idrive = <0x09>;
+		sc,cc_pull_down_idrive = <0x44>;
+		sc,continuous_time = <0x4E>;
+		sc,bmc_width = <0x86 0x3d 0x3b 0x10>;
 
 		oplus,pps_dev-name = "cp-sc6607";
 		oplus,pps_role_master;
@@ -433,7 +437,6 @@
 		rt-tcpc,vconn_supply  = <1>;  /* 0: Never, 1: Always, */
 					      /* 2: EMarkOnly, 3: StartOnly */
 		/* rt-tcpc,disable_pe; */
-		rt-tcpc,notifier_supply_num = <2>;
 		rt1711pd,intr_gpio = <&tlmm 124 0x0>;
 		rt1711pd,intr_gpio_num = <124>;
 		rt,disable_irq_reset;
@@ -1084,7 +1087,7 @@
 		oplus,support_hot_enter_kpoc;
 		oplus,poweroff_high_batt_temp = <720>;
 		oplus,poweroff_emergency_batt_temp = <770>;
-		oplus,usbtemp_batt_temp_over_hot = <65>;
+		oplus,usbtemp_batt_temp_over_hot = <60>;
 		oplus,usbtemp_temp_gap_with_batt_temp_in_over_hot = <15>;
 	};
 };

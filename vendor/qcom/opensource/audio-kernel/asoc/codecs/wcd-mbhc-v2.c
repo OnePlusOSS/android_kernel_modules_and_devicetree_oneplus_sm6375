@@ -36,6 +36,9 @@
 /* 2022/11/02, Add for separate audio switch */
 #include "usbc_switch.h"
 #endif /* CONFIG_OPLUS_SEPARATE_USBC_SWITCH */
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+#include <soc/oplus/system/oplus_mm_kevent_fb.h>
+#endif
 
 static const unsigned int mbhc_ext_dev_supported_table[] = {
 	EXTCON_JACK_MICROPHONE,
@@ -1412,6 +1415,46 @@ done:
 }
 
 #if IS_ENABLED(CONFIG_OPLUS_HS_G_DET)
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+#include <linux/ktime.h>
+#define MIN_IRQ_INTERNAL_MS        1500
+#define CHECK_COUNT_DELAY_MS       3000
+static int g_set_gpio_cnt = 0;
+static int g_get_audio_cnt = 0;
+static ktime_t g_last_irq_tm = 0;
+static void hs_g_check_count_fn(struct work_struct *work)
+{
+	char buf[MM_KEVENT_MAX_PAYLOAD_SIZE] = {0};
+	int usbc_cnt = get_usbc_event_cnt();
+	int usbc_audio_cnt = get_usbc_audio_event_cnt();
+
+	pr_info("%s: g_set_gpio_cnt=%d, usbc_cnt=%d, g_get_audio_cnt=%d, usbc_audio_cnt=%d\n",
+		__func__, g_set_gpio_cnt, usbc_cnt, g_get_audio_cnt, usbc_audio_cnt);
+
+	if (g_set_gpio_cnt > usbc_cnt) {
+		pr_info("%s: g_set_gpio_cnt=%d > usbc_cnt=%d, not equal\n", __func__, g_set_gpio_cnt, usbc_cnt);
+		scnprintf(buf, sizeof(buf) - 1, "func@@%s$$payload@@wcd set gpio count=%d,usbc_switch get event count=%d,not equal", \
+				__func__, g_set_gpio_cnt, usbc_cnt);
+		upload_mm_fb_kevent_to_atlas_limit(OPLUS_AUDIO_EVENTID_HEADSET_DET, buf, MM_FB_KEY_RATELIMIT_1MIN);
+		g_set_gpio_cnt = 0;
+		clear_usbc_event_cnt();
+	} else if (g_set_gpio_cnt < usbc_cnt) {
+		pr_info("%s: g_set_gpio_cnt=%d < usbc_cnt=%d, clear count but not feedback\n", __func__, g_set_gpio_cnt, usbc_cnt);
+		g_set_gpio_cnt = 0;
+		clear_usbc_event_cnt();
+	}
+
+	if (g_get_audio_cnt != usbc_audio_cnt) {
+		pr_info("%s: g_get_audio_cnt=%d, usbc_audio_cnt=%d, not equal\n", __func__, g_get_audio_cnt, usbc_audio_cnt);
+		scnprintf(buf, sizeof(buf) - 1, "func@@%s$$payload@@usbc_switch notify audio count=%d,wcd get event count=%d,not equal", \
+				__func__, usbc_audio_cnt, g_get_audio_cnt);
+		upload_mm_fb_kevent_to_atlas_limit(OPLUS_AUDIO_EVENTID_HEADSET_DET, buf, MM_FB_KEY_RATELIMIT_1MIN);
+		g_get_audio_cnt = 0;
+		clear_usbc_audio_event_cnt();
+	}
+}
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+
 static void wcd_usbc_dev_det_irq_handler(struct wcd_mbhc *mbhc)
 {
 	bool detection_type = 0;
@@ -1425,6 +1468,17 @@ static void wcd_usbc_dev_det_irq_handler(struct wcd_mbhc *mbhc)
 		detection_type);
 	pr_info("%s: detection_type:%d\n", __func__, detection_type);
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	cancel_delayed_work_sync(&mbhc->check_count_dwrok);
+	if (ktime_before(ktime_get(), ktime_add_ms(g_last_irq_tm, MIN_IRQ_INTERNAL_MS))) {
+		g_set_gpio_cnt = 0;
+		pr_info("%s: two plug action is too close, set g_set_gpio_cnt 0\n", __func__);
+	} else {
+		g_set_gpio_cnt++;
+	}
+	g_last_irq_tm = ktime_get();
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
+
 	if (detection_type == 1) {
 		ret = gpio_direction_output(mbhc->usbc_insert_pin, 0);
 		pr_info("%s: tregger cc-interrupt ret:%d\n", __func__, ret);
@@ -1432,6 +1486,9 @@ static void wcd_usbc_dev_det_irq_handler(struct wcd_mbhc *mbhc)
 		ret = gpio_direction_output(mbhc->usbc_insert_pin, 1);
 		pr_info("%s: disable cc-interrupt ret:%d\n", __func__, ret);
 	}
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	schedule_delayed_work(&mbhc->check_count_dwrok, msecs_to_jiffies(CHECK_COUNT_DELAY_MS));
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 
 	/* Set the detection type appropriately */
 	WCD_MBHC_REG_UPDATE_BITS(WCD_MBHC_MECH_DETECTION_TYPE,
@@ -2108,6 +2165,31 @@ static void wcd_mbhc_plug_fix_after_ssr(struct wcd_mbhc *mbhc)
 }
 #endif /* OPLUS_ARCH_EXTENDS */
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+#define WCD_CHECK_PLUG_IN_IRQ_DELAY    5000//ms
+#define WCD_CHECK_PLUG_OUT_IRQ_DELAY    2000//ms
+static void wcd_check_plug_irq_fn(struct work_struct *work)
+{
+	struct delayed_work *dwork;
+	struct wcd_mbhc *mbhc;
+	char buf[MM_KEVENT_MAX_PAYLOAD_SIZE] = {0};
+
+	dwork = to_delayed_work(work);
+	mbhc = container_of(dwork, struct wcd_mbhc, hp_irq_chk_work);
+
+	if (mbhc && mbhc->mbhc_cfg && mbhc->mbhc_cfg->enable_usbc_analog) {
+		pr_debug("%s: mode = %lu, hph_status=%d\n", __func__, mbhc->usbc_mode, mbhc->hph_status);
+
+		if (((mbhc->usbc_mode == TYPEC_ACCESSORY_AUDIO) && (mbhc->hph_status == 0)) || \
+				((mbhc->usbc_mode == TYPEC_ACCESSORY_NONE) && (mbhc->hph_status !=0))) {
+
+			scnprintf(buf, sizeof(buf) - 1, "func@@%s$$typec_mode@@%lu$$hph_status@@%d", \
+					__func__, mbhc->usbc_mode, mbhc->hph_status);
+			upload_mm_fb_kevent_to_atlas_limit(OPLUS_AUDIO_EVENTID_HEADSET_DET, buf, MM_FB_KEY_RATELIMIT_1MIN);
+		}
+	}
+}
+#endif /* OPLUS_FEATURE_MM_FEEDBACK */
 #if IS_ENABLED(CONFIG_QCOM_FSA4480_I2C) || IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
 #ifdef OPLUS_ARCH_EXTENDS
 /* Fix the l_det status when plug out after insertion */
@@ -2157,6 +2239,18 @@ static int wcd_mbhc_usbc_ana_event_handler(struct notifier_block *nb,
 	mbhc->usbc_mode = mode;
 #endif /* OPLUS_ARCH_EXTENDS */
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	if (mbhc->mbhc_cfg && mbhc->hp_wake_lock) {
+		cancel_delayed_work_sync(&mbhc->hp_irq_chk_work);
+		if (mode == TYPEC_ACCESSORY_AUDIO) {
+			__pm_wakeup_event(mbhc->hp_wake_lock, msecs_to_jiffies(WCD_CHECK_PLUG_IN_IRQ_DELAY + 10));
+			schedule_delayed_work(&mbhc->hp_irq_chk_work, msecs_to_jiffies(WCD_CHECK_PLUG_IN_IRQ_DELAY));
+		} else if (mbhc->usbc_mode == TYPEC_ACCESSORY_NONE) {
+			__pm_wakeup_event(mbhc->hp_wake_lock, msecs_to_jiffies(WCD_CHECK_PLUG_OUT_IRQ_DELAY + 10));
+			schedule_delayed_work(&mbhc->hp_irq_chk_work, msecs_to_jiffies(WCD_CHECK_PLUG_OUT_IRQ_DELAY));
+		}
+	}
+#endif /* OPLUS_FEATURE_MM_FEEDBACK */
 	if (mode == TYPEC_ACCESSORY_AUDIO) {
 		dev_dbg(mbhc->component->dev, "enter, %s: mode = %lu\n", __func__, mode);
 #if IS_ENABLED(CONFIG_QCOM_WCD_USBSS_I2C)
@@ -2480,7 +2574,9 @@ static int wcd_mbhc_usbc_ana_detect_work_fn(struct notifier_block *nb,
 		return -EINVAL;
 
 	pr_info("%s: enter mode=%d\n", __func__, (int)mode);
-
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	g_get_audio_cnt++;
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 	if (mode == TYPEC_ACCESSORY_AUDIO) {
 		if (mbhc->mbhc_cb->clk_setup)
 			mbhc->mbhc_cb->clk_setup(mbhc->component, true);
@@ -2608,6 +2704,9 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 		} else {
 			pr_info("%s: HS_G is support, usbc_hs_g_det_support=%d\n",
 				__func__, mbhc_cfg->usbc_hs_g_det_support);
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+			INIT_DELAYED_WORK(&mbhc->check_count_dwrok, hs_g_check_count_fn);
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 		}
 	}
 #endif
@@ -2736,6 +2835,13 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 			#endif /* OPLUS_ARCH_EXTENDS */
 		}
 #endif
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+		mbhc->hp_wake_lock = wakeup_source_register(NULL, "hp_wake_lock");
+		if (!mbhc->hp_wake_lock) {
+			pr_err("%s: wakeup_source_register failed\n", __func__);
+		}
+		INIT_DELAYED_WORK(&mbhc->hp_irq_chk_work, wcd_check_plug_irq_fn);
+#endif /* OPLUS_FEATURE_MM_FEEDBACK */
 	}
 
 	#ifdef OPLUS_ARCH_EXTENDS
@@ -2744,6 +2850,11 @@ int wcd_mbhc_start(struct wcd_mbhc *mbhc, struct wcd_mbhc_config *mbhc_cfg)
 		wcd_mbhc_plug_fix_after_ssr(mbhc);
 	}
 	#endif /* OPLUS_ARCH_EXTENDS */
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	pr_info("%s: event_id=%u, version:%s\n", __func__, \
+			OPLUS_AUDIO_EVENTID_HEADSET_DET, HEADSET_ERR_FB_VERSION);
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 
 	return rc;
 err:
@@ -2797,6 +2908,16 @@ void wcd_mbhc_stop(struct wcd_mbhc *mbhc)
 		fsa4480_unreg_notifier(&mbhc->aatc_dev_nb, mbhc->aatc_dev_np);
 	}
 #endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+	if (mbhc->mbhc_cfg->enable_usbc_analog) {
+		cancel_delayed_work_sync(&mbhc->hp_irq_chk_work);
+		if (mbhc->hp_wake_lock) {
+			wakeup_source_unregister(mbhc->hp_wake_lock);
+			mbhc->hp_wake_lock = NULL;
+		}
+	}
+#endif /* CONFIG_OPLUS_FEATURE_MM_FEEDBACK */
 
 	/*deinit aatc_dev_np, to fix issue after adsp reboot*/
 	mbhc->aatc_dev_np = NULL;

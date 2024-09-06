@@ -114,9 +114,6 @@ static inline int get_task_cls_for_scene(struct task_struct *task)
 	if (cls_mid == 0)
 		cls_mid = cls_max;
 
-	if (slide_cfs_boost(task))
-		return !task_fits_capacity(task, ux_cputopo.sched_cls[0].capacity) ? cls_mid : 0;
-
 	/* for launch scene, heavy ux task should not move to min capacity cluster */
 	if (sched_assist_scene(SA_LAUNCH) && test_sched_assist_ux_type(task, SA_TYPE_HEAVY | SA_TYPE_ANIMATOR))
 		return test_sched_assist_ux_type(task, SA_TYPE_ANIMATOR) ? cls_mid : cls_max;
@@ -127,9 +124,17 @@ static inline int get_task_cls_for_scene(struct task_struct *task)
 	if (sched_assist_scene(SA_LAUNCHER_SI))
 		return is_task_util_over(task, BOOST_THRESHOLD_UNIT) ? cls_mid : 0;
 
+	if (is_top_ux_task_up_enabled() && test_sched_assist_ux_type(task, UX_PRIORITY_TOP_APP))
+	{
+		return is_task_util_over(task, BOOST_THRESHOLD_UNIT) ? cls_mid : 0;
+	}
+
+	if (slide_cfs_boost(task)) {
+		return !task_fits_capacity(task, ux_cputopo.sched_cls[0].capacity) ? cls_mid : 0;
+	}
+
 	if (oplus_get_im_flag(task) == IM_FLAG_CAMERA_HAL)
 		return cls_mid;
-
 	return 0;
 }
 
@@ -169,6 +174,9 @@ bool should_ux_task_skip_cpu(struct task_struct *task, unsigned int dst_cpu)
 		goto skip;
 	}
 #endif
+
+	if (is_limit_task_ux_enabled() && !test_sched_assist_ux_type(task, UX_PRIORITY_TOP_APP))
+		return false;
 
 	if (!is_ux_task_prefer_cpu_for_scene(task, dst_cpu)) {
 		reason = 0;
@@ -228,6 +236,9 @@ bool set_ux_task_to_prefer_cpu(struct task_struct *task, int *orig_target_cpu)
 		return false;
 
 	if (unlikely(cls_nr <= 0))
+		return false;
+
+	if (is_limit_task_ux_enabled() && !test_sched_assist_ux_type(task, UX_PRIORITY_TOP_APP))
 		return false;
 
 	if (!test_task_ux(task))
@@ -502,7 +513,9 @@ inline void oplus_check_preempt_wakeup(struct rq *rq, struct task_struct *p, boo
 
 	if (!wake_ux && !curr_ux) {
 #ifdef CONFIG_OPLUS_FEATURE_TICK_GRAN
-		if (unlikely(global_debug_enabled & DEBUG_DYNAMIC_PREEMPT))
+		bool tick_gran = (global_debug_enabled & DEBUG_DYNAMIC_PREEMPT);
+
+		if (likely(tick_gran == false))
 			return;
 
 		ran = curr->se.sum_exec_runtime - curr->se.prev_sum_exec_runtime;
@@ -558,6 +571,16 @@ inline void oplus_check_preempt_wakeup(struct rq *rq, struct task_struct *p, boo
 	spin_unlock_irqrestore(orq->ux_list_lock, irqflag);
 }
 EXPORT_SYMBOL(oplus_check_preempt_wakeup);
+bool is_top_ux_task_up_enabled(void)
+{
+	return (global_sched_assist_enabled & FEATURE_TOPUP);
+}
+EXPORT_SYMBOL(is_top_ux_task_up_enabled);
+bool is_limit_task_ux_enabled(void)
+{
+	return (global_sched_assist_enabled & FEATURE_LIMIT);
+}
+EXPORT_SYMBOL(is_limit_task_ux_enabled);
 
 #ifdef CONFIG_OPLUS_FEATURE_SCHED_SPREAD
 bool is_spread_task_enabled(void)

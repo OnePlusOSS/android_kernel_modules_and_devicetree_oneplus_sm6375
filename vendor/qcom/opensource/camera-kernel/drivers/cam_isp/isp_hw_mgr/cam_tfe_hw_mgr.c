@@ -5440,7 +5440,12 @@ static int cam_tfe_hw_mgr_handle_hw_dump_info(
 		}
 	}
 
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	if (event_info->res_type == CAM_ISP_RESOURCE_TFE_OUT) {
+	#else
 	if (event_info->res_type == CAM_ISP_RESOURCE_VFE_OUT) {
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 		out_port_id = event_info->res_id & 0xFF;
 		if (out_port_id >= CAM_TFE_HW_OUT_RES_MAX) {
 			CAM_ERR(CAM_ISP,
@@ -5466,6 +5471,153 @@ end:
 	return rc;
 }
 
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+//case：07127783 for mipi crc error
+static int cam_tfe_hw_mgr_handle_tfe_err(
+	uint32_t                      err_type,
+	struct cam_isp_hw_event_info *event_info,
+	struct cam_tfe_hw_mgr_ctx    *ctx)
+{
+	struct cam_isp_hw_error_event_data       error_event_data = {0};
+	struct cam_tfe_hw_event_recovery_data    recovery_data = {0};
+	uint32_t core_idx;
+	int rc = -EINVAL;
+
+	error_event_data.error_code = CAM_REQ_MGR_ISP_UNREPORTED_ERROR;
+	switch (err_type) {
+	case CAM_TFE_IRQ_STATUS_VIOLATION:
+		error_event_data.error_type = CAM_ISP_HW_ERROR_VIOLATION;
+		break;
+	default:
+		error_event_data.error_type = CAM_ISP_HW_ERROR_OVERFLOW;
+		break;
+	}
+
+	cam_tfe_hw_mgr_handle_hw_dump_info(ctx, event_info);
+
+	core_idx = event_info->hw_idx;
+
+	if (g_tfe_hw_mgr.debug_cfg.enable_recovery)
+		error_event_data.recovery_enabled = true;
+	else
+		error_event_data.recovery_enabled = false;
+
+	rc = cam_tfe_hw_mgr_find_affected_ctx(&error_event_data,
+		core_idx, &recovery_data);
+
+	if (rc || !(recovery_data.no_of_context))
+		return rc;
+
+	if (event_info->res_type == CAM_ISP_RESOURCE_TFE_OUT)
+		return rc;
+
+	if (g_tfe_hw_mgr.debug_cfg.enable_recovery) {
+		/* Trigger for recovery */
+		if (err_type == CAM_TFE_IRQ_STATUS_VIOLATION)
+			recovery_data.error_type = CAM_ISP_HW_ERROR_VIOLATION;
+		else
+			recovery_data.error_type = CAM_ISP_HW_ERROR_OVERFLOW;
+		cam_tfe_hw_mgr_do_error_recovery(&recovery_data);
+	} else {
+		CAM_DBG(CAM_ISP, "recovery enabled: %d, ctx: %d",
+			g_tfe_hw_mgr.debug_cfg.enable_recovery,
+			ctx->ctx_index);
+		rc = 0;
+	}
+
+	return rc;
+}
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
+
+#ifdef OPLUS_FEATURE_CAMERA_COMMON
+//case：07127783 for mipi crc error
+static int cam_tfe_hw_mgr_handle_csid_event(
+	uint32_t                      err_type,
+	struct cam_isp_hw_event_info *event_info,
+	void                         *ctx)
+{
+	struct cam_isp_hw_error_event_data  error_event_data = {0};
+	struct cam_tfe_hw_event_recovery_data     recovery_data = {0};
+	struct cam_tfe_hw_mgr_ctx           *tfe_hw_mgr_ctx = ctx;
+
+
+	/* Default error types */
+	error_event_data.error_type = CAM_ISP_HW_ERROR_CSID_FATAL;
+	recovery_data.error_type = CAM_ISP_HW_ERROR_OVERFLOW;
+
+	/* this can be extended based on the types of error
+	 * received from CSID
+	 */
+	error_event_data.error_code = CAM_REQ_MGR_ISP_UNREPORTED_ERROR;
+	switch (err_type) {
+	case CAM_ISP_HW_ERROR_CSID_FATAL: {
+
+		if (!g_tfe_hw_mgr.debug_cfg.enable_csid_recovery)
+			break;
+
+		error_event_data.error_type = event_info->err_type;
+		break;
+	}
+	case CAM_ISP_HW_ERROR_CSID_PKT_PAYLOAD_CORRUPTED: {
+		error_event_data.error_type = CAM_ISP_HW_ERROR_CSID_FATAL;
+		error_event_data.error_code = CAM_REQ_MGR_CSID_RX_PKT_PAYLOAD_CORRUPTION;
+		break;
+	}
+	default:
+		break;
+	}
+
+	CAM_ERR(CAM_ISP, "CSID:[%u] error: %u on ctx: %u", event_info->hw_idx,
+		error_event_data.error_type, tfe_hw_mgr_ctx->ctx_index);
+
+	cam_tfe_hw_mgr_find_affected_ctx(&error_event_data,
+		event_info->hw_idx, &recovery_data);
+
+	return 0;
+}
+
+static int cam_tfe_hw_mgr_handle_hw_err(
+	void                                *ctx,
+	void                                *evt_info)
+{
+	struct cam_isp_hw_error_event_info      *err_evt_info;
+	struct cam_tfe_hw_mgr_ctx               *tfe_hw_mgr_ctx;
+	struct cam_isp_hw_event_info            *event_info = evt_info;
+	int    rc = -EINVAL;
+
+	if (!event_info->event_data) {
+		CAM_ERR(CAM_ISP, "No error event data failed to process");
+		return rc;
+	}
+
+	if (ctx)
+		tfe_hw_mgr_ctx = (struct cam_tfe_hw_mgr_ctx *)ctx;
+	else {
+		CAM_ERR(CAM_ISP, "tfe hw mgr ctx NULL");
+		return rc;
+	}
+
+	err_evt_info = (struct cam_isp_hw_error_event_info *)event_info->event_data;
+
+	spin_lock(&g_tfe_hw_mgr.ctx_lock);
+	switch (event_info->hw_type) {
+	case CAM_ISP_HW_TYPE_TFE_CSID:
+		rc = cam_tfe_hw_mgr_handle_csid_event(err_evt_info->err_type, event_info,
+			tfe_hw_mgr_ctx);
+		break;
+
+	case CAM_ISP_HW_TYPE_TFE:
+		rc = cam_tfe_hw_mgr_handle_tfe_err(err_evt_info->err_type, event_info,
+			tfe_hw_mgr_ctx);
+		break;
+
+	default:
+		CAM_ERR(CAM_ISP, "Error unhandled for hw_type: %d", event_info->hw_type);
+	}
+	spin_unlock(&g_tfe_hw_mgr.ctx_lock);
+	return rc;
+}
+#else
 static int cam_tfe_hw_mgr_handle_csid_event(
 	struct cam_isp_hw_event_info *event_info)
 {
@@ -5563,6 +5715,7 @@ end:
 	spin_unlock(&g_tfe_hw_mgr.ctx_lock);
 	return rc;
 }
+#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 static int cam_tfe_hw_mgr_handle_hw_rup(
 	void                                    *ctx,

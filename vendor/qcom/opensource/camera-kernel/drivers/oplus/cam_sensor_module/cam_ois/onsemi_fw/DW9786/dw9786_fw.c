@@ -33,9 +33,9 @@
 #include "cam_debug_util.h"
 #include "fw_download_interface.h"
 
-#include "DW9786_OPPO_LUOYANG_FW_DVT.h" //EVT FW change in here
-#include "DW9786_OPPO_LUOYANG_FW_EVT.h" //EVT FW change in here
-#include "DW9786_OPPO_LUOYANG_FW_T0.h" //T0 FW change in here
+#include "DW9786_OPLUS_LUOYANG_FW_DVT.h" //EVT FW change in here
+#include "DW9786_OPLUS_LUOYANG_FW_EVT.h" //EVT FW change in here
+#include "DW9786_OPLUS_LUOYANG_FW_T0.h" //T0 FW change in here
 
 #include "dw9786_fw.h"
 

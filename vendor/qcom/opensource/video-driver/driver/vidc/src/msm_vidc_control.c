@@ -2177,6 +2177,14 @@ int msm_vidc_adjust_bitrate_boost(void *instance, struct v4l2_ctrl *ctrl)
 		goto adjust;
 	}
 
+	/*
+	 * If the client sets bitrate_boost to 0,
+	 * this value will not be modified according to min_quality.
+	 */
+	if (adjusted_value == 0) {
+		goto adjust;
+	}
+
 	if (min_quality) {
 		adjusted_value = capability->cap[BITRATE_BOOST].max;
 		goto adjust;

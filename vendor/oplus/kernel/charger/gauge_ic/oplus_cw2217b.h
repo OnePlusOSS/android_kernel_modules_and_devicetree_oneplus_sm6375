@@ -46,7 +46,6 @@
 
 #define CWFG_NAME               "cw2217"
 #define SIZE_OF_PROFILE         80
-#define USER_RSENSE             2
 
 #define QUEUE_DELAYED_WORK_TIME  5000
 #define QUEUE_START_WORK_TIME    50
@@ -59,14 +58,13 @@
 #define CW_SLEEP_10MS           10
 #define CW_VOL_MAGIC_PART1      5
 #define CW_VOL_MAGIC_PART2      16
-#define CW_UI_FULL              100
 #define CW_SOC_MAGIC_BASE       256
 #define CW_SOC_MAGIC_100        100
 #define CW_TEMP_MAGIC_PART1     10
 #define CW_TEMP_MAGIC_PART2     2
 #define CW_TEMP_MAGIC_PART3     400
 #define COMPLEMENT_CODE_U16     0x8000
-#define CW_CUR_MAGIC_PART1      160
+#define CW_CUR_MAGIC_PART1      160000
 #define CW_CUR_MAGIC_PART2      100
 #define CW_STB_CUR_MAGIC_PART3  16
 #define CW_SLEEP_100MS          100
@@ -123,6 +121,10 @@ struct cw_battery {
 	int  fcc;
 	int  fw_version;
 	struct iio_channel	*batt_id_chan;
+	int cw_ui_full;
+	bool cw_switch_config_profile;
+	int cw_user_rsense;
+	unsigned char cw_config_profile[SIZE_OF_PROFILE];
 };
 void  cw2217_init(void);
 void  cw2217_exit(void);

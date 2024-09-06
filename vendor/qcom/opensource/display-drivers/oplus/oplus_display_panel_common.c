@@ -31,6 +31,7 @@ int oplus_dither_enable = 0;
 int oplus_dre_status = 0;
 int oplus_cabc_status = OPLUS_DISPLAY_CABC_UI;
 extern int lcd_closebl_flag;
+extern int shutdown_flag;
 extern int oplus_display_audio_ready;
 char oplus_rx_reg[PANEL_TX_MAX_BUF] = {0x0};
 char oplus_rx_len = 0;
@@ -2469,4 +2470,13 @@ void oplus_panel_switch_to_sync_te(struct dsi_panel *panel)
 	SDE_ATRACE_END("oplus_panel_switch_to_sync_te");
 
 	return;
+}
+
+int oplus_display_set_shutdown_flag(void *buf)
+{
+	shutdown_flag = 1;
+	pr_err("debug for %s, buf = [%s], shutdown_flag = %d\n",
+			__func__, buf, shutdown_flag);
+
+	return 0;
 }

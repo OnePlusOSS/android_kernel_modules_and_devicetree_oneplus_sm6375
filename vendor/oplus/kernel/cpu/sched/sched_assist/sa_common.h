@@ -55,6 +55,8 @@
 /* define for sched assist feature */
 #define FEATURE_COMMON (1 << 0)
 #define FEATURE_SPREAD (1 << 1)
+#define FEATURE_LIMIT (1 << 2)
+#define FEATURE_TOPUP (1 << 3)
 
 #define UX_EXEC_SLICE (4000000U)
 
@@ -164,10 +166,16 @@ enum IM_FLAG_TYPE {
 	IM_FLAG_SYSTEMSERVER_PID,
 	IM_FLAG_MIDASD,
 	IM_FLAG_AUDIO_CAMERA_HAL, /* audio mode disable camera hal ux */
+	IM_FLAG_GPU_COMPLETION, /* GPU completion for app*/
 	MAX_IM_FLAG_TYPE,
 };
 
 #define MAX_IM_FLAG_PRIO	MAX_IM_FLAG_TYPE
+
+enum ots_state {
+	OTS_STATE_SET_AFFINITY,
+	OTS_STATE_MAX,
+};
 
 #ifdef CONFIG_OPLUS_FEATURE_TICK_GRAN
 DECLARE_PER_CPU(u64, retired_instrs);
@@ -507,11 +515,6 @@ static inline void init_task_ux_info(struct task_struct *t)
 			ots->ux_state = SA_TYPE_HEAVY;
 		}
 	}
-
-	if (!strncmp(t->comm, "C2OMXNode", 9) || !strncmp(t->comm, "MP4WtrAudTrkThr", 15) || !strncmp(t->comm, "MP4WtrVidTrkThr", 15)) {
-		ots->ux_state = SA_TYPE_ANIMATOR;
-	}
-
 #endif
 
 #if IS_ENABLED(CONFIG_ARM64_AMU_EXTN) && IS_ENABLED(CONFIG_OPLUS_FEATURE_CPU_JANKINFO)
@@ -603,6 +606,8 @@ bool test_task_is_rt(struct task_struct *task);
 
 bool prio_higher(int a, int b);
 bool test_task_ux(struct task_struct *task);
+bool is_limit_task_ux_enabled(void);
+bool is_top_ux_task_up_enabled(void);
 bool test_task_ux_depth(int ux_depth);
 bool test_inherit_ux(struct task_struct *task, int type);
 bool test_set_inherit_ux(struct task_struct *task);
@@ -646,6 +651,7 @@ void sa_sched_switch_handler(void *unused, bool preempt, struct task_struct *pre
 void android_vh_cgroup_set_task_handler(void *unused, int ret, struct task_struct *task);
 /* register vendor hook in kernel/signal.c  */
 void android_vh_exit_signal_handler(void *unused, struct task_struct *p);
+void android_rvh_sched_setaffinity_handler(void *unused, struct task_struct *p, const struct cpumask *in_mask, int *retval);
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_BAN_APP_SET_AFFINITY)
 void android_vh_sched_setaffinity_early_handler(void *unused, struct task_struct *task, const struct cpumask *new_mask, bool *skip);
 #endif

@@ -3378,7 +3378,7 @@ static int bq28z610_update_soc_smooth_parameter(void)
 	if (gauge_ic->batt_bq28z610) {
 		bq28z610_modify_soc_smooth_parameter(gauge_ic);
 	}
-	if (gauge_ic->device_type == DEVICE_BQ27426) {
+	if (gauge_ic->device_type == DEVICE_BQ27426 && gauge_ic->enable_sleep_mode) {
 		bq27426_modify_soc_smooth_parameter(gauge_ic, true);
 	}
 
@@ -3846,9 +3846,8 @@ try:
 	if (!try_count)
 		goto error;
 	*batt_dod0_passed_q = (extend_data[15] << 0x08) | extend_data[14];
-	if (*batt_dod0_passed_q  & 0x8000) {
-		*batt_dod0_passed_q  = -((~(*batt_dod0_passed_q  - 1)) & 0xFFFF);
-	}
+	if (*batt_dod0_passed_q & 0x8000)
+		*batt_dod0_passed_q = -((~(*batt_dod0_passed_q - 1)) & 0xFFFF);
 	*batt_dod0 = (extend_data[13] << 0x08) | extend_data[12];
 	pr_info("bq27z561_get_dod0_parameters dod0:%d, dod0_passed_q:%d\n", *batt_dod0, *batt_dod0_passed_q);
 
@@ -5769,7 +5768,7 @@ static int bq27411_modify_soc_smooth_parameter(struct chip_bq27541 *chip, bool i
 			bq28z610_set_sleep_mode(chip, false);
 			return GAUGE_OK;
 		} else if (chip->device_type == DEVICE_BQ27426 && is_powerup == true
-				&& gauge_i2c_err == 0 && oplus_is_rf_ftm_mode() == false) {
+				&& gauge_i2c_err == 0 && oplus_is_rf_ftm_mode() == false && gauge_ic->enable_sleep_mode) {
 			bq27426_modify_soc_smooth_parameter(gauge_ic, false);
 			return GAUGE_OK;
 		}

@@ -88,7 +88,7 @@ int cam_flash_sc6607_i2c_apply_setting(struct cam_flash_ctrl *flash_ctrl, struct
 		rc = cam_flash_sc6607_write_byte(flash_ctrl->io_master_info.client, reg_setting->reg_addr, reg_setting->reg_data);
 
 		// flash on
-		if ((reg_setting->reg_addr == 0x80) && (reg_setting->reg_data == 0xc1)) {
+		if (((reg_setting->reg_addr == 0x80) && (reg_setting->reg_data == 0xc1)) || ((reg_setting->reg_addr == 0x80) && (reg_setting->reg_data == 0x81))) {
 			flash_ftm_data.cur_flash_status = IIC_FLASH_HIGH;
 			CAM_ERR(CAM_FLASH, "[SC6607] flash ON!");
 		}
@@ -223,11 +223,6 @@ static int cam_ftm_i2c_torch_on(struct cam_flash_ctrl *flash_ctrl, struct cam_fl
 	uint32_t project_code = 0;
 	struct device_node *of_node = NULL;
 
-	if(flash_ftm_data.cur_flash_status >= IIC_FLASH_ON_LEVEL1 && \
-		flash_ftm_data.cur_flash_status <= IIC_FLASH_ON_LEVEL4){
-		torch_on_setting =  &(flash_ftm_settings->flashlowlevelsettings[flash_ftm_data.cur_flash_status - IIC_FLASH_ON_LEVEL1]);
-	}
-
 	// add for sc6607
 	if (flash_ctrl->io_master_info.master_type == I2C_MASTER) {
 		of_node = flash_ctrl->soc_info.dev->of_node;
@@ -243,10 +238,17 @@ static int cam_ftm_i2c_torch_on(struct cam_flash_ctrl *flash_ctrl, struct cam_fl
 		case 22242:
 			init_setting = &(flash_ftm_settings->flashinitsettings_mulan_a);
 			break;
-
+		case 23091:
+			torch_on_setting = &(flash_ftm_settings->flashlow1ledsettings);//add for TLED1
+			break;
 		default:
 			break;
 		}
+	}
+
+	if(flash_ftm_data.cur_flash_status >= IIC_FLASH_ON_LEVEL1 && \
+		flash_ftm_data.cur_flash_status <= IIC_FLASH_ON_LEVEL4){
+		torch_on_setting =  &(flash_ftm_settings->flashlowlevelsettings[flash_ftm_data.cur_flash_status - IIC_FLASH_ON_LEVEL1]);
 	}
 
 	if (!power_on_setting || !init_setting || !torch_on_setting) {

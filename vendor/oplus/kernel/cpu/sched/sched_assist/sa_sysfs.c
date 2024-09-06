@@ -372,6 +372,10 @@ static int im_flag_set_handle(struct task_struct *task, int im_flag)
 		oplus_set_ux_state_lock(task, ux_state | SA_TYPE_HEAVY, -1, true);
 		}
 		break;
+	case IM_FLAG_GPU_COMPLETION: {
+		oplus_set_ux_state_lock(task, SA_TYPE_LIGHT, -1, true);
+		}
+		break;
 	default:
 		break;
 	}

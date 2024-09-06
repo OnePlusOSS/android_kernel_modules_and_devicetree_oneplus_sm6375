@@ -3181,6 +3181,15 @@ static int fts_get_threshold_from_img(struct chip_data_ft3683g *ts_data, struct 
 					TPD_INFO("fts_uniformity_data_P = %p, fts_uniformity_data_N = %p \n",
 					         ts_data->fts_autotest_offset->fts_uniformity_data_P,
 					         ts_data->fts_autotest_offset->fts_uniformity_data_N);
+
+				} else if (item_head->item_bit == TYPE_PANEL_DIFFER_DATA) {
+					ts_data->fts_autotest_offset->fts_panel_differ_data_P = (int32_t *)(
+								limit_fw->data + item_head->top_limit_offset);
+					ts_data->fts_autotest_offset->fts_panel_differ_data_N = (int32_t *)(
+								limit_fw->data + item_head->floor_limit_offset);
+					TPD_INFO("fts_panel_differ_data_P = %p, fts_panel_differ_data_N = %p \n",
+						 ts_data->fts_autotest_offset->fts_panel_differ_data_P,
+						 ts_data->fts_autotest_offset->fts_panel_differ_data_N);
 				}
 
 			} else if (true == ts_data->use_panelfactory_limit) {
@@ -3212,6 +3221,15 @@ static int fts_get_threshold_from_img(struct chip_data_ft3683g *ts_data, struct 
 					TPD_INFO("fts_uniformity_data_P = %p, fts_uniformity_data_P = %p \n",
 					         ts_data->fts_autotest_offset->fts_uniformity_data_P,
 					         ts_data->fts_autotest_offset->fts_uniformity_data_N);
+
+				} else if (item_head->item_bit == TYPE_FACTORY_PANEL_DIFFER_DATA) {
+					ts_data->fts_autotest_offset->fts_panel_differ_data_P = (int32_t *)(
+								limit_fw->data + item_head->top_limit_offset);
+					ts_data->fts_autotest_offset->fts_panel_differ_data_N = (int32_t *)(
+								limit_fw->data + item_head->floor_limit_offset);
+					TPD_INFO("fts_panel_differ_data_P = %p, fts_panel_differ_data_N = %p \n",
+						 ts_data->fts_autotest_offset->fts_panel_differ_data_P,
+						 ts_data->fts_autotest_offset->fts_panel_differ_data_N);
 				}
 			}
 

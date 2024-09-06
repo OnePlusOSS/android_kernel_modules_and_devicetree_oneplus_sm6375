@@ -23,6 +23,7 @@ static int enable_hbm_exit_dly_on_flags = 0;
 extern u32 oplus_last_backlight;
 extern bool refresh_rate_change;
 extern const char *cmd_set_prop_map[];
+extern bool send_demura_after_hbm_off_flag;
 ktime_t lhbm_off_te_timestamp;
 
 int oplus_panel_parse_bl_config(struct dsi_panel *panel)
@@ -412,8 +413,12 @@ void oplus_panel_backlight_demura_dbv_switch(struct dsi_panel *panel, u32 bl_lvl
 			LCD_INFO("invaild format of cmd %s\n", cmd_set_prop_map[bl_demura_mode]);
 		}
 	}
-	if (panel->oplus_priv.bl_demura_mode != bl_demura_last_mode && panel->power_mode == SDE_MODE_DPMS_ON)
+
+	LCD_INFO("send_demura_after_hbm_off_flag = %d\n", send_demura_after_hbm_off_flag);
+	if ((panel->oplus_priv.bl_demura_mode != bl_demura_last_mode || send_demura_after_hbm_off_flag) && (panel->power_mode == SDE_MODE_DPMS_ON)) {
 		rc = dsi_panel_tx_cmd_set(panel, bl_demura_mode);
+		send_demura_after_hbm_off_flag = false;
+	}
 	if (rc) {
 		DSI_ERR("[%s] failed to send bl_demura_mode, rc=%d\n", panel->name, rc);
 		return;

@@ -69,6 +69,8 @@ struct LCM_setting_table {
 	unsigned int count;
 	u8 *para_list;
 };
+/* send demura after hbm off */
+bool send_demura_after_hbm_off_flag = false;
 
 /* a mutex lock used to avoid multiple concurrent invocations */
 static DEFINE_MUTEX(oplus_ofp_lock);
@@ -223,6 +225,10 @@ int oplus_ofp_init(void *dsi_panel)
 		/* indicates whether gamut needs to be bypassed in aod/fod scenarios or not */
 		p_oplus_ofp_params->need_to_bypass_gamut = utils->read_bool(utils->data, "oplus,ofp-need-to-bypass-gamut");
 		OFP_INFO("need_to_bypass_gamut:%d\n", p_oplus_ofp_params->need_to_bypass_gamut);
+
+		/* indicates whether the current hbm status sends demura */
+		p_oplus_ofp_params->demura_reset_after_hbm_off = utils->read_bool(utils->data, "oplus,ofp-demura-reset-after-hbm-off");
+		OFP_INFO("demura_reset_after_hbm_off:%d\n", p_oplus_ofp_params->demura_reset_after_hbm_off);
 
 		if (!oplus_ofp_video_mode_aod_fod_is_enabled()) {
 			/* indicates whether display on cmd(29h) needs to be sent after image data write before aod on or not */
@@ -747,6 +753,11 @@ static int oplus_ofp_panel_cmd_set_nolock(void *dsi_panel, enum dsi_cmd_set_type
 		*/
 		if (oplus_display_panel_get_global_hbm_status()) {
 			oplus_display_panel_set_global_hbm_status(GLOBAL_HBM_DISABLE);
+		}
+
+		/* send demura after hbm off */
+		if (p_oplus_ofp_params->demura_reset_after_hbm_off) {
+			send_demura_after_hbm_off_flag = true;
 		}
 
 		/* recovery backlight level */
@@ -1751,6 +1762,12 @@ static int oplus_ofp_set_panel_hbm(void *sde_connector, bool hbm_en)
 	/* delay before hbm cmds */
 	oplus_ofp_hbm_wait_handle(c_conn, hbm_en);
 
+	if (!hbm_en && p_oplus_ofp_params->aod_unlocking) {
+		p_oplus_ofp_params->aod_unlocking = false;
+		OFP_INFO("oplus_ofp_aod_unlocking:%d\n", p_oplus_ofp_params->aod_unlocking);
+		OPLUS_OFP_TRACE_INT("oplus_ofp_aod_unlocking", p_oplus_ofp_params->aod_unlocking);
+	}
+
 	if (oplus_ofp_local_hbm_is_enabled()) {
 		/* send lhbm pressed icon cmds */
 		if (hbm_en) {
@@ -1787,12 +1804,6 @@ static int oplus_ofp_set_panel_hbm(void *sde_connector, bool hbm_en)
 			}
 		}
 		OFP_INFO("hbm cmds are flushed\n");
-	}
-
-	if (!hbm_en && p_oplus_ofp_params->aod_unlocking) {
-		p_oplus_ofp_params->aod_unlocking = false;
-		OFP_INFO("oplus_ofp_aod_unlocking:%d\n", p_oplus_ofp_params->aod_unlocking);
-		OPLUS_OFP_TRACE_INT("oplus_ofp_aod_unlocking", p_oplus_ofp_params->aod_unlocking);
 	}
 
 	OPLUS_OFP_TRACE_END("oplus_ofp_set_panel_hbm");
@@ -2416,7 +2427,7 @@ bool oplus_ofp_backlight_filter(void *dsi_panel, unsigned int bl_level)
 				need_filter_backlight = true;
 			}
 		}
-	} else if (p_oplus_ofp_params->aod_unlocking && p_oplus_ofp_params->fp_press && bl_level) {
+	} else if (p_oplus_ofp_params->aod_unlocking && bl_level) {
 		OFP_INFO("aod unlocking is true, filter backlight %u setting\n", bl_level);
 		need_filter_backlight = true;
 	} else if (!p_oplus_ofp_params->aod_unlocking && !p_oplus_ofp_params->doze_active

@@ -2333,9 +2333,9 @@ static int oplus_vooc_fastchg_process(struct oplus_chg_vooc *chip)
 	    sid_to_adapter_chg_type(chip->sid) == CHARGER_TYPE_VOOC)
 		ret_info = 0x02;
 
-	chg_info("volt=%d, temp=%d, soc=%d, uisoc=%d, curr=%d, cool_down=%d\n",
+	chg_info("volt=%d, temp=%d, soc=%d, uisoc=%d, curr=%d, cool_down=%d\n, ret_info=%d\n",
 		 chip->batt_volt, chip->temperature, chip->soc, chip->ui_soc, chip->icharging,
-		 chip->cool_down);
+		 chip->cool_down, ret_info);
 
 	return ret_info;
 }

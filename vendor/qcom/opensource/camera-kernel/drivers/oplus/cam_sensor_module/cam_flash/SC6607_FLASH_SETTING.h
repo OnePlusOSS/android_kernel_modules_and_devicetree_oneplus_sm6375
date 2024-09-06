@@ -57,6 +57,18 @@
 		.data_type = CAMERA_SENSOR_I2C_TYPE_BYTE,
 		.delay = 1,
 	},
+	.flashlow1ledsettings =
+	{
+		.reg_setting =//100ma for TLED1
+		{
+			{.reg_addr = 0x84, .reg_data = 0x06, .delay = 0x00, .data_mask = 0x00}, \
+			{.reg_addr = 0x80, .reg_data = 0x21, .delay = 0x00, .data_mask = 0x00}, \
+		},
+		.size = 2,
+		.addr_type = CAMERA_SENSOR_I2C_TYPE_BYTE,
+		.data_type = CAMERA_SENSOR_I2C_TYPE_BYTE,
+		.delay = 1,
+	},
 	.flashlowlevelsettings =
 	{
 

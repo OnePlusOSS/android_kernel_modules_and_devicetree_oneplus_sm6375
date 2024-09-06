@@ -455,6 +455,10 @@ struct cam_tfe_csid_hw {
 	bool                                ppi_enable;
 	uint64_t                            prev_boot_timestamp;
 	uint64_t                            prev_qtimer_ts;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	uint32_t                            crc_error_irq_count;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 };
 
 int cam_tfe_csid_hw_probe_init(struct cam_hw_intf  *csid_hw_intf,

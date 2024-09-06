@@ -182,8 +182,10 @@ memcg_hybs_t *hybridswap_cache_alloc(struct mem_cgroup *memcg, bool atomic)
 		flags &= ~__GFP_DIRECT_RECLAIM;
 
 	hybs = (memcg_hybs_t *)kmem_cache_zalloc(hybridswap_cache, flags);
-	if (!hybs)
+	if (unlikely(hybs == NULL)) {
+		log_err("alloc memcg_hybs_t failed\n");
 		return NULL;
+	}
 
 	INIT_LIST_HEAD(&hybs->score_node);
 #ifdef CONFIG_HYBRIDSWAP_CORE
@@ -1004,8 +1006,11 @@ static ssize_t mem_cgroup_name_write(struct kernfs_open_file *of, char *buf,
 	memcg_hybs_t *hybp = MEMCGRP_ITEM_DATA(memcg);
 	int len, w_len;
 
-	if (!hybp)
-		return -EINVAL;
+	if (unlikely(hybp == NULL)) {
+		hybp = hybridswap_cache_alloc(memcg, false);
+		if (!hybp)
+			return -EINVAL;
+	}
 
 	buf = strstrip(buf);
 	len = strlen(buf) + 1;
@@ -1077,6 +1082,13 @@ int mem_cgroup_app_uid_write(struct cgroup_subsys_state *css,
 
 	memcg = mem_cgroup_from_css(css);
 	hybs = MEMCGRP_ITEM_DATA(memcg);
+
+	if (unlikely(hybs == NULL)) {
+		hybs = hybridswap_cache_alloc(memcg, false);
+		if (!hybs)
+			return -EINVAL;
+	}
+
 	if (!hybs) {
 		return -EINVAL;
 	}

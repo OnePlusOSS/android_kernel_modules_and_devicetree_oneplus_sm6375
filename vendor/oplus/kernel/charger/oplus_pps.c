@@ -3996,7 +3996,7 @@ static int oplus_3rd_pps_action_volt_change(struct oplus_pps_chip *chip)
 	if (chip->target_charger_volt < charger_volt_min) {
 		chip->target_charger_volt = charger_volt_min;
 		chip->count.ask_vbus_min++;
-		pps_err("ask vbus reached min %d times!\n", chip->count.ask_vbus_min);
+		pps_err("ask vbus reached min %d times! charger_volt_min=%d\n", chip->count.ask_vbus_min, charger_volt_min);
 		if (chip->count.ask_vbus_min > PPS_3RD_ASK_VOLT_MIN_CNT && chip->pps_status != OPLUS_PPS_STATUS_CHECK) {
 			chip->count.ask_vbus_min = 0;
 			pps_err("adjust volt fail!\n");

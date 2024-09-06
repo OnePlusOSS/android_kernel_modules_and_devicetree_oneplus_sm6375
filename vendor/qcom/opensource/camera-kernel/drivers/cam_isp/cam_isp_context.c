@@ -2751,9 +2751,16 @@ end:
 				notify.error = CRM_KMD_ERR_BUBBLE;
 
 		CAM_WARN(CAM_ISP,
+			#ifdef OPLUS_FEATURE_CAMERA_COMMON
+			//case：07127783 for mipi crc error
+			"Notify CRM: req %lld, frame %lld ctx %u, error %d error code: %d",
+			error_request_id, ctx_isp->frame_id, ctx->ctx_id,
+			notify.error, error_event_data->error_code);
+			#else
 			"Notify CRM: req %lld, frame %lld ctx %u, error %d",
 			error_request_id, ctx_isp->frame_id, ctx->ctx_id,
 			notify.error);
+			#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 
 		ctx->ctx_crm_intf->notify_err(&notify);
 
@@ -2774,6 +2781,10 @@ end:
 				req_msg.u.err_msg.error_type =
 					CAM_REQ_MGR_ERROR_TYPE_RECOVERY;
 
+			#ifdef OPLUS_FEATURE_CAMERA_COMMON
+			//case：07127783 for mipi crc error
+			req_msg.u.err_msg.error_code = error_event_data->error_code;
+			#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 			req_msg.u.err_msg.link_hdl = ctx_isp->base->link_hdl;
 			req_msg.u.err_msg.request_id = error_request_id;
 			req_msg.u.err_msg.resource_size = 0x0;

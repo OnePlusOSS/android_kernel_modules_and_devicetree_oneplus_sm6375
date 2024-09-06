@@ -60,6 +60,10 @@ enum cam_isp_hw_err_type {
 	CAM_ISP_HW_ERROR_BUSIF_OVERFLOW = 0x0010,
 	CAM_ISP_HW_ERROR_CSID_FATAL = 0x0020,
 	CAM_ISP_HW_ERROR_CSID_OVERFLOW = 0x0040,
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	CAM_ISP_HW_ERROR_CSID_PKT_PAYLOAD_CORRUPTED   = 0x00010000,
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 };
 
 /**
@@ -220,6 +224,7 @@ struct cam_isp_hw_eof_event_data {
  * struct cam_isp_hw_error_event_data - Event payload for CAM_HW_EVENT_ERROR
  *
  * @error_type:            Error type for the error event
+ * @error_code:            Error code for the error event
  * @timestamp:             Timestamp for the error event
  * @recovery_enabled:      Identifies if the context needs to recover & reapply
  *                         this request
@@ -227,6 +232,10 @@ struct cam_isp_hw_eof_event_data {
  */
 struct cam_isp_hw_error_event_data {
 	uint32_t             error_type;
+	#ifdef OPLUS_FEATURE_CAMERA_COMMON
+	//case：07127783 for mipi crc error
+	uint32_t             error_code;
+	#endif /*OPLUS_FEATURE_CAMERA_COMMON*/
 	uint64_t             timestamp;
 	bool                 recovery_enabled;
 	bool                 enable_req_dump;

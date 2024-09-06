@@ -70,6 +70,17 @@
 #define CONV_DETACH_TIME 1000000
 #define OPLUS_HVDCP_DETECT_TO_DETACH_TIME 90
 
+#define PD_PHY_SLAVE_ADDRESS 0x62
+#define LED_SLAVE_ADDRESS 0x64
+#define SC6607_REG_ENTER_TEST_MODE  0x5D
+#define SC6607_REG_CHECK_TEST_MODE  0XC1
+#define SC6607_REG_CC_PULL_UP_IDRIVE 0x75
+#define SC6607_REG_CC_PULL_DOWN_IDRIVE 0x8c
+#define SC6607_REG_CONTINUOUS_TIME 0xE7
+#define SC6607_REG_BMC_WIDTH_1 0xE8
+#define SC6607_REG_BMC_WIDTH_2 0xE9
+#define SC6607_REG_BMC_WIDTH_3 0xEA
+#define SC6607_REG_BMC_WIDTH_4 0xEB
 
 #ifndef CONFIG_OPLUS_CHARGER_MTK
 enum charger_type {
@@ -288,6 +299,7 @@ enum {
 	SC6607_REG_PREDATA_VALUE = 0XA6,
 	SC6607_REG_T5_T7_SETTING = 0XA8,
 	SC6607_REG_DP_HOLD_TIME = 0XA9,
+	SC6607_REG_TX_DISCARD = 0XEC,
 	SC6607_REG_MAX,
 };
 
@@ -736,6 +748,7 @@ struct sc6607 {
 	struct delayed_work hw_bc12_detect_work;
 	struct delayed_work init_status_work;
 	struct delayed_work sc6607_aicr_setting_work;
+	struct delayed_work sc6607_camera_off_work;
 	bool track_init_done;
 
 	u8 chip_id;
@@ -796,6 +809,10 @@ struct sc6607_platform_data {
 	bool enable_adc;
 /********* workaround: Octavian needs to enable adc end *********/
 #endif
+	u32 cc_pull_up_idrive;
+	u32 cc_pull_down_idrive;
+	u32 continuous_time;
+	u32 bmc_width[4];
 };
 
 struct sc6607_alert_handler {

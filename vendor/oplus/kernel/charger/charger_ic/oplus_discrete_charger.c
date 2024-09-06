@@ -54,8 +54,8 @@
 #include "oplus_discrete_charger.h"
 #include <linux/nvmem-consumer.h>
 #if (LINUX_VERSION_CODE == KERNEL_VERSION(5, 1, 5))
-#include "../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci.h"
-#include "../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm.h"
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
 #endif
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 4, 0))
 int op10_subsys_init(void);
@@ -1951,7 +1951,7 @@ int oplus_chg_set_pd_config(void)
 		}
 	} else {
 		if (((chip->limits.vbatt_pdqc_to_5v_thr > 0 && chip->batt_volt > chip->limits.vbatt_pdqc_to_5v_thr)
-		    || chip->cool_down_force_5v) && chip->charger_volt > VBUS_9V_THR_MV) {
+		    || chip->cool_down_force_5v || chip->camera_on) && chip->charger_volt > VBUS_9V_THR_MV) {
 			chip->chg_ops->input_current_write(PDO_9V_TO_5V_IBUS_MA);
 			oplus_chg_suspend_charger();
 			oplus_chg_config_charger_vsys_threshold(0x03);//set Vsys Skip threshold 101%
@@ -1961,6 +1961,8 @@ int oplus_chg_set_pd_config(void)
 			msleep(REQUEST_PDO_DELAY_MS);
 			printk(KERN_ERR "%s: vbus[%d], ibus[%d], ret[%d]\n", __func__, 5000, 2000, ret);
 			oplus_chg_unsuspend_charger();
+			if(chip->camera_on)
+				chip->camera_on_pre = 1;
 		} else if ((chip->vbatt_num == 1) && (chip->vooc_project == 1)) {
 			chip->chg_ops->input_current_write(PDO_9V_TO_5V_IBUS_MA);
 			oplus_chg_suspend_charger();
@@ -1972,7 +1974,7 @@ int oplus_chg_set_pd_config(void)
 			msleep(REQUEST_PDO_DELAY_MS);
 			printk(KERN_ERR "%s: charger voltage=%d", __func__, qpnp_get_prop_charger_voltage_now());
 			oplus_chg_unsuspend_charger();
-		} else if (chip->batt_volt < chip->limits.vbatt_pdqc_to_9v_thr && !chip->cool_down_force_5v) {
+		} else if (chip->batt_volt < chip->limits.vbatt_pdqc_to_9v_thr && !chip->cool_down_force_5v && !chip->camera_on) {
 			oplus_voocphy_set_pdqc_config();
 			oplus_chg_suspend_charger();
 			oplus_chg_config_charger_vsys_threshold(0x02);//set Vsys Skip threshold 104%
@@ -2198,8 +2200,6 @@ int oplus_pps_pd_exit(void)
 }
 
 #define OPLUS_SVID 0x22d9
-#define DISCOVER_SVID_MAX_RETRIES 2
-#define DISCOVER_SVID_RETRY_DELAY 50
 uint32_t pd_svooc_abnormal_adapter[] = {
 	0x20002,
 	0x10002,
@@ -2209,12 +2209,10 @@ uint32_t pd_svooc_abnormal_adapter[] = {
 
 int oplus_get_adapter_svid(void)
 {
-	int i = 0, ret = 0;
+	int i = 0, j = 0;
 	uint32_t vdos[VDO_MAX_NR] = {0};
 	struct tcpc_device *tcpc_dev = tcpc_dev_get_by_name("type_c_port0");
 	struct tcpm_svid_list svid_list= {0, {0}};
-	int disc_svid_retries = 0;
-	bool disc_svid_support = true;
 
 	if (tcpc_dev == NULL || !g_oplus_chip) {
 		chg_err("tcpc_dev is null return\n");
@@ -2226,58 +2224,29 @@ int oplus_get_adapter_svid(void)
 		return -1;
 	}
 
-GET_SVID_RETRY:
-	ret = tcpm_inquire_pd_partner_inform(tcpc_dev, vdos);
-	if (ret == TCPM_SUCCESS) {
-		chg_info("vdos[0]=0x%x", vdos[0] & 0xFFFF);
-		if ((vdos[0] & 0xFFFF) == OPLUS_SVID) {
+	tcpm_inquire_pd_partner_svids(tcpc_dev, &svid_list);
+	for (i = 0; i < svid_list.cnt; i++) {
+		chg_err("svid[%d] = %d\n", i, svid_list.svids[i]);
+		if (svid_list.svids[i] == OPLUS_SVID) {
 			g_oplus_chip->pd_svooc = true;
-			chg_info("match svid and this is oplus adapter vdos\n");
-			for (i = 0; i < ARRAY_SIZE(pd_svooc_abnormal_adapter); i++) {
-				if (pd_svooc_abnormal_adapter[i] == vdos[2]) {
-					chg_info("This is oplus gnd abnormal adapter 0x%x 0x%x \n", vdos[1], vdos[2]);
-					g_oplus_chip->is_abnormal_adapter = true;
-					break;
-				}
-			}
-			goto GET_SVID_COMPLETE;
+			chg_err("match svid and this is oplus adapter\n");
+			break;
 		}
-	} else {
-		chg_err("inquire vdos failed (%d)", ret);
 	}
 
-	ret = tcpm_inquire_pd_partner_svids(tcpc_dev, &svid_list);
-	if (ret == TCPM_SUCCESS) {
-		for (i = 0; i < svid_list.cnt; i++) {
-			chg_err("svid[%d] = 0x%x\n", i, svid_list.svids[i]);
-			if (svid_list.svids[i] == OPLUS_SVID) {
-				g_oplus_chip->pd_svooc = true;
-				chg_info("match svid and this is oplus adapter\n");
-				goto GET_SVID_COMPLETE;
+	tcpm_inquire_pd_partner_inform(tcpc_dev, vdos);
+	if ((vdos[0] & 0xFFFF) == OPLUS_SVID) {
+		g_oplus_chip->pd_svooc = true;
+		chg_err("match svid and this is oplus adapter 11\n");
+		for (j = 0; j < ARRAY_SIZE(pd_svooc_abnormal_adapter); j++) {
+			if (pd_svooc_abnormal_adapter[j] == vdos[2]) {
+				chg_err("This is oplus gnd abnormal adapter %x %x \n", vdos[1], vdos[2]);
+				g_oplus_chip->is_abnormal_adapter = true;
+				break;
 			}
 		}
-	} else {
-		chg_err("inquire svids failed (%d)", ret);
 	}
 
-	if (((vdos[0] == 0) || (disc_svid_support && svid_list.cnt == 0))
-	    && disc_svid_retries < DISCOVER_SVID_MAX_RETRIES) {
-		chg_err("get pd_svooc svid fail, retry to discover id/svid\n");
-		disc_svid_retries++;
-		ret = tcpm_dpm_vdm_discover_id(tcpc_dev, NULL);
-		if (ret != TCPM_SUCCESS)
-			chg_err("Failed to send disc_id (%d)\n", ret);
-		msleep(DISCOVER_SVID_RETRY_DELAY);
-		ret = tcpm_dpm_vdm_discover_svid(tcpc_dev, NULL);
-		if (ret != TCPM_SUCCESS) {
-			disc_svid_support = false;
-			chg_err("Failed to send disc_svid (%d).\n", ret);
-		}
-		msleep(DISCOVER_SVID_RETRY_DELAY);
-		goto GET_SVID_RETRY;
-	}
-
-GET_SVID_COMPLETE:
 
 	return 0;
 }

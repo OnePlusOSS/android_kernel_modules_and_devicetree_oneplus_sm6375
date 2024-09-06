@@ -26,9 +26,9 @@
 #elif (LINUX_VERSION_CODE >= KERNEL_VERSION(5, 15, 0))
 #include "../../../../../kernel_platform/msm-kernel/drivers/power/supply/qcom/storm-watch.h"
 #include "../../../../../kernel_platform/msm-kernel/drivers/power/supply/qcom/battery.h"
-#include "../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpci.h"
-#include "../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm.h"
-#include "../../../../../kernel_platform/msm-kernel/drivers/usb/typec/pd/inc/tcpm_pd.h"
+#include "../pd_ext/inc/tcpci.h"
+#include "../pd_ext/inc/tcpm.h"
+#include "../pd_ext/inc/tcpm_pd.h"
 #else
 #include "../../../../kernel/msm-5.4/drivers/power/supply/qcom/storm-watch.h"
 #include "../../../../kernel/msm-5.4/drivers/power/supply/qcom/battery.h"

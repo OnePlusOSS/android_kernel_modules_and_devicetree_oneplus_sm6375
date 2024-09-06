@@ -22,13 +22,9 @@
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
 #include "feedback/oplus_audio_kernel_fb.h"
-#ifdef dev_err_ratelimited
-#undef dev_err_ratelimited
-#define dev_err_ratelimited dev_err_ratelimited_fb
-#endif
-#ifdef pr_err_ratelimited
-#undef pr_err_ratelimited
-#define pr_err_ratelimited pr_err_ratelimited_fb
+#ifdef dev_err
+#undef dev_err
+#define dev_err dev_err_fb
 #endif
 #ifdef pr_err
 #undef pr_err
@@ -1061,8 +1057,18 @@ int wcd937x_mbhc_post_ssr_init(struct wcd937x_mbhc *mbhc,
 
 	snd_soc_component_update_bits(component, WCD937X_ANA_MBHC_MECH,
 				0x20, 0x20);
+	#ifndef OPLUS_ARCH_EXTENDS
+	/* Add for headphone volume match to impedance */
 	ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb, &intr_ids,
 			    wcd_mbhc_registers, WCD937X_ZDET_SUPPORTED);
+	#else /* OPLUS_ARCH_EXTENDS */
+	if (wcd_mbhc->enable_hp_impedance_detect)
+		ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb, &intr_ids,
+				    wcd_mbhc_registers, true);
+	else
+		ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb, &intr_ids,
+					wcd_mbhc_registers, false);
+	#endif /* OPLUS_ARCH_EXTENDS */
 	if (ret) {
 		dev_err(component->dev, "%s: mbhc initialization failed\n",
 			__func__);
@@ -1090,6 +1096,12 @@ int wcd937x_mbhc_init(struct wcd937x_mbhc **mbhc,
 	struct wcd_mbhc *wcd_mbhc = NULL;
 	struct wcd937x_pdata *pdata;
 	int ret = 0;
+	#ifdef OPLUS_ARCH_EXTENDS
+	/* Add for headphone volume match to impedance */
+	u32 enable_hp_impedance_detect = 0;
+	int rc = 0;
+	const char *mbhc_enable_hp_impedance_detect = "oplus,mbhc_enable_hp_impedance_detect";
+	#endif /* OPLUS_ARCH_EXTENDS */
 
 	if (!component) {
 		pr_err("%s: component is NULL\n", __func__);
@@ -1116,19 +1128,60 @@ int wcd937x_mbhc_init(struct wcd937x_mbhc **mbhc,
 
 	pdata = dev_get_platdata(component->dev);
 	if (!pdata) {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+		dev_err_fb_fatal_delay(component->dev, "%s: pdata pointer is NULL\n", __func__);
+#else
 		dev_err(component->dev, "%s: pdata pointer is NULL\n",
 			__func__);
+#endif
 		ret = -EINVAL;
 		goto err;
 	}
 	wcd_mbhc->micb_mv = pdata->micbias.micb2_mv;
 
+	#ifdef OPLUS_ARCH_EXTENDS
+	/* Add for headphone volume match to impedance */
+	if (of_find_property(component->dev->of_node, mbhc_enable_hp_impedance_detect,
+				    NULL)) {
+		rc = of_property_read_u32(component->dev->of_node, mbhc_enable_hp_impedance_detect, &enable_hp_impedance_detect);
+		if (!rc) {
+			if (enable_hp_impedance_detect) {
+				wcd_mbhc->enable_hp_impedance_detect= true;
+			} else {
+				wcd_mbhc->enable_hp_impedance_detect = false;
+			}
+		} else
+			dev_err(component->dev, "%s: Looking up %s property in node %s failed\n",
+				__func__, mbhc_enable_hp_impedance_detect, component->dev->of_node->full_name);
+	} else {
+		dev_info(component->dev, "%s: oplus,mbhc_enable_hp_impedance_detect DT property not found\n",
+			__func__);
+	}
+	dev_err(component->dev, "%s:wcd_mbhc->enable_hp_impedance_detect(%d)\n",__func__, wcd_mbhc->enable_hp_impedance_detect);
+	#endif /* OPLUS_ARCH_EXTENDS */
+
+	#ifndef OPLUS_ARCH_EXTENDS
+	/* Add for headphone volume match to impedance */
 	ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb,
 				&intr_ids, wcd_mbhc_registers,
 				WCD937X_ZDET_SUPPORTED);
+	#else /* OPLUS_ARCH_EXTENDS */
+	if (wcd_mbhc->enable_hp_impedance_detect)
+		ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb,
+					&intr_ids, wcd_mbhc_registers,
+					true);
+	else
+		ret = wcd_mbhc_init(wcd_mbhc, component, &mbhc_cb,
+					&intr_ids, wcd_mbhc_registers,
+					false);
+	#endif /* OPLUS_ARCH_EXTENDS */
 	if (ret) {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_MM_FEEDBACK)
+		dev_err_fb_fatal_delay(component->dev, "%s: mbhc initialization failed\n", __func__);
+#else
 		dev_err(component->dev, "%s: mbhc initialization failed\n",
 			__func__);
+#endif
 		goto err;
 	}
 

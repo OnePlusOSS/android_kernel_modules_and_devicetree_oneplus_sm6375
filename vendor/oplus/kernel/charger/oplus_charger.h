@@ -1200,6 +1200,7 @@ struct oplus_chg_chip {
 	bool vooc_temp_change;
 	int vooc_temp_status;
 	bool camera_on;
+	bool camera_on_pre;
 	bool calling_on;
 	bool ac_online;
 	bool cool_down_done;
