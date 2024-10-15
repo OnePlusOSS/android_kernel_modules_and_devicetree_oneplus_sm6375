@@ -1,6 +1,5 @@
 config TOUCHPANEL_ST_ST80Y
-#	default y
 	tristate "TP ST80Y IC enable or not for OPLUS"
-	help
-	  Say M to enable driver for Touchpanel using ST ST80Y IC
-	  Say M to enable driver for Touchpanel using ST ST80Y IC as module
+	---help---
+	Say Y to enable driver for Touchpanel using ST ST80Y IC
+	Say M to enable driver for Touchpanel using ST ST80Y IC as module

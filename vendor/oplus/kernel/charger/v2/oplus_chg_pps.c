@@ -2104,6 +2104,10 @@ static void oplus_pps_check_low_curr_full(struct oplus_pps *chip)
 
 #define PPS_FULL_COUNTS_LOW_CURR	6
 
+	/* third pps not support low current full check */
+	if (!chip->oplus_pps_adapter)
+		return;
+
 	oplus_pps_check_low_curr_temp_status(chip);
 
 	if (!is_gauge_topic_available(chip)) {
@@ -2337,6 +2341,10 @@ static void oplus_pps_imp_check(struct oplus_pps *chip)
 {
 	int curr;
 	int rc;
+
+	/* third pps not support impedance check */
+	if (!chip->oplus_pps_adapter)
+		return;
 
 	if (!chip->imp_uint) {
 		/* prevent triggering watchdog */

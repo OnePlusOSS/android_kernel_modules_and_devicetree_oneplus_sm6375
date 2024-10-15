@@ -19,6 +19,8 @@ EXPORT_SYMBOL(ili_debug_en);
 struct ilitek_ts_data *ilits;
 
 extern int cur_tp_index;
+extern int (*tp_reset_gpio_notifier)(bool enable, unsigned int tp_index);
+extern int (*tp_cs_gpio_notifier)(bool enable, unsigned int tp_index);
 
 #if SPI_DMA_TRANSFER_SPLIT
 #define DMA_TRANSFER_MAX_CHUNK      4   /* number of chunks to be transferred.*/
@@ -2152,8 +2154,7 @@ int ili_report_handler(void)
 		if (ret == DO_SPI_RECOVER) {
 			ili_ic_get_pc_counter(DO_SPI_RECOVER);
 
-			if (ilits->actual_tp_mode == P5_X_FW_GESTURE_MODE && ilits->gesture
-					&& !ilits->prox_near) {
+			if (ilits->actual_tp_mode == P5_X_FW_GESTURE_MODE && ilits->gesture) {
 				ILI_ERR("Gesture failed, doing gesture recovery\n");
 
 				if (ili_gesture_recovery() < 0) {
@@ -2495,6 +2496,12 @@ static int ilitek_ftm_process(void *chip_data)
 	ILI_INFO("FTM tp enter sleep\n");
 	/*ftm sleep in */
 	ili_ic_func_ctrl("sleep", SLEEP_IN_FTM_BEGIN);
+
+	if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
+		TPD_INFO("%s: set reset gpio(%d) to low\n", __func__, chip_info->hw_res->reset_gpio);
+		gpio_set_value(chip_info->hw_res->reset_gpio, 0);
+	}
+
 	mutex_unlock(&chip_info->touch_mutex);
 	return ret;
 }
@@ -2566,8 +2573,6 @@ static int ilitek_reset(void *chip_data)
 		ILI_ERR("Failed to upgrade firmware, ret = %d\n", ret);
 	}
 
-	ili_reset_ctrl(TP_HW_RST_ONLY);
-
 	mutex_unlock(&chip_info->touch_mutex);
 	return 0;
 }
@@ -2579,6 +2584,23 @@ static int ilitek_power_control(void *chip_data, bool enable)
 
 	if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
 		gpio_direction_output(chip_info->hw_res->reset_gpio, 0);
+	}
+
+	return 0;
+}
+
+static int ilitek_reset_gpio_control(void *chip_data, bool enable)
+{
+	struct ilitek_ts_data *chip_info = (struct ilitek_ts_data *)chip_data;
+	int rc = 0;
+
+	if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
+		rc = gpio_direction_output(chip_info->hw_res->reset_gpio, enable);
+		if (rc) {
+			ILI_INFO("unable to set dir for reset_gpio rc=%d", rc);
+		}
+		gpio_set_value(chip_info->hw_res->reset_gpio, enable);
+		ILI_INFO("set reset %d\n", enable);
 	}
 
 	return 0;
@@ -2896,7 +2918,7 @@ static fw_update_state ilitek_fw_update(void *chip_data,
 
 	if (ret < 0) {
 		ILI_ERR("Failed to upgrade firmware, ret = %d\n", ret);
-		return ret;
+		return FW_UPDATE_ERROR;
 	}
 
 	return FW_UPDATE_SUCCESS;
@@ -2990,6 +3012,21 @@ static bool ilitek_irq_throw_away(void *chip_data)
 		return true;
 	}
 
+	/*ignore first irq after hw rst pin reset*/
+	if (ilits->ignore_first_irq) {
+		ILI_INFO("ignore_first_irq\n");
+		ilits->ignore_first_irq = false;
+		return true;
+	}
+
+	if (!chip_info->fw_update_stat || !ilits->report
+			|| atomic_read(&ilits->tp_reset) ||
+			atomic_read(&ilits->fw_stat) || atomic_read(&ilits->tp_sw_mode) ||
+			atomic_read(&ilits->mp_stat) || atomic_read(&ilits->tp_sleep) ||
+			atomic_read(&ilits->esd_stat)) {
+		ILI_INFO("ignore interrupt !\n");
+		return true;
+	}
 	return false;
 }
 
@@ -3013,6 +3050,7 @@ static struct oplus_touchpanel_operations ilitek_ops = {
 	.sensitive_lv_set           = ilitek_sensitive_lv_set,
 	.tp_queue_work_prepare      = ilitek_reset_queue_work_prepare,
 	.tp_irq_throw_away          = ilitek_irq_throw_away,
+	.reset_gpio_control         = ilitek_reset_gpio_control,
 };
 
 static int ilitek_read_debug_data(struct seq_file *s,
@@ -3285,6 +3323,11 @@ static void ili_apk_debug_set(void *chip_data, bool on_off)
 {
 	struct ilitek_ts_data *chip_info;
 	chip_info = (struct ilitek_ts_data *)chip_data;
+
+	if (ilits->tp_suspend) {
+        ILI_INFO("TP is not resume\n");
+        return;
+	}
 
 	if (on_off) {
 		ili_set_tp_data_len(DATA_FORMAT_DEMO_DEBUG_INFO, false, NULL);
@@ -3775,6 +3818,14 @@ int ilitek7807s_spi_probe(struct spi_device *spi)
 		goto abnormal_register_driver;
 	}
 
+	/* set spi cs pin to high for normal boot */
+	if (tp_cs_gpio_notifier) {
+		tp_cs_gpio_notifier(1, ts->tp_index);
+		TPD_INFO("%s: set spi cs pin to high for normal boot.\n", __func__);
+	} else {
+		TPD_INFO("%s: tp_cs_gpio_notifier is null.\n", __func__);
+	}
+
 	ts->tp_suspend_order = TP_LCD_SUSPEND;
 	ts->tp_resume_order = LCD_TP_RESUME;
 	ts->esd_handle_support = false;
@@ -3947,7 +3998,7 @@ static int __init tp_driver_init_ili_7807s(void)
 
 	if (!tp_judge_ic_match(DRIVER_NAME)) {
 		ILI_ERR("TP driver is already register\n");
-		return 0;
+		return -1;
 	}
 
 	get_oem_verified_boot_state();

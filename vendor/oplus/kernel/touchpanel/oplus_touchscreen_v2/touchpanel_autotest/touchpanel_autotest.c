@@ -260,8 +260,8 @@ EXPORT_SYMBOL(get_test_item_info);
  * Returning parameter number(success) or negative errno(failed)
  */
 int save_test_result(struct auto_testdata *p_auto_testdata,
-		     short  *data, int data_size,
-		     enum limit_type limit_type, char  *limit_name)
+		     short *data, int data_size,
+		     enum limit_type limit_type, char *limit_name)
 {
 	uint8_t  data_buf[64] = {0};
 	int ret = 0;
@@ -736,6 +736,7 @@ int tp_black_screen_test(struct file *file, char __user *buffer, size_t count,
 	TP_INFO(ts->tp_index, "%s %ld %lld\n", __func__, count, *ppos);
 
 	ts->gesture_test.message = kzalloc(msg_size, GFP_KERNEL);
+	memset(ts->gesture_test.message, 0, msg_size);
 
 	if (!ts->gesture_test.message) {
 		TP_INFO(ts->tp_index, "failed to alloc memory\n");

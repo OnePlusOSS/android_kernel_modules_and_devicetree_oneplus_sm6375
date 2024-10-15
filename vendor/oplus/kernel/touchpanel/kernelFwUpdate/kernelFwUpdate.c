@@ -1,6 +1,6 @@
 /***************************************************
  * File:kernelFwUpdate.c
- *
+ * 
  * Copyright (c)  2008- 2030  oplus Mobile communication Corp.ltd.
  * Description:
  *             kernelFwUpdate

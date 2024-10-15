@@ -87,11 +87,6 @@
 #define GTP_CMD_GESTURE_DEBUG           0x44
 #define GTP_CMD_GAME_MODE               0x45
 #define GTP_CMD_GESTURE_MASK            0x46
-#define GTP_CMD_SMOOTH_LEVEL            0x48
-#define GTP_CMD_HIGH_FRAME_TIME         0x49
-#define GTP_CMD_SENSITIVE_LEVEL         0x4A
-
-
 
 /*config cmd*/
 #define COMMAND_START_SEND_LARGE_CFG    0x80
@@ -123,6 +118,23 @@
 #define W_DETECT                        0x77
 #define FP_DOWN_DETECT                  0x46
 #define FP_UP_DETECT                    0x55
+
+#define GTP_GESTURE_SIN_TAP				0
+#define GTP_GESTURE_DOU_TAP				1
+#define FINGER_PRINT_DOWN				2
+#define GTP_GESTURE_DOU_SWIP			3
+#define GTP_GESTURE_L2R_SWIP			4
+#define GTP_GESTURE_R2L_SWIP			5
+#define GTP_GESTURE_U2D_SWIP			6
+#define GTP_GESTURE_D2U_SWIP			7
+#define GTP_GESTURE_LEFT_VEE			9
+#define GTP_GESTURE_RIGHT_VEE			9
+#define GTP_GESTURE_DOWN_VEE			10
+#define GTP_GESTURE_CIRCLE				12
+#define GTP_GESTURE_UP_VEE				13
+#define GTP_GESTURE_M					14
+#define GTP_GESTURE_W					15
+
 
 /*gesture define*/
 #define GSX_KEY_DATA_LEN                37
@@ -438,7 +450,7 @@ struct goodix_register {
 	uint16_t GTP_REG_RAWDATA;
 	uint16_t GTP_REG_DIFFDATA;
 	uint16_t GTP_REG_BASEDATA;
-	uint16_t GTP_REG_DETAILED_DEBUG_INFO;
+	uint16_t GESTURE_DATA_ADDR;
 };
 
 struct config_info {
@@ -508,7 +520,7 @@ struct  chip_data_gt9886 {
 	bool                                fp_down_flag;
 	char                                *p_tp_fw;
 	bool                                kernel_grip_support;
-	bool                                detail_debug_info_support;
+	u32 gesture_type;
 	/*add for healthinfo*/
 	unsigned int esd_err_count;
 	unsigned int send_cmd_err_count;

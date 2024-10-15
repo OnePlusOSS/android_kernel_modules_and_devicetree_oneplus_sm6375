@@ -9,6 +9,7 @@
 #include <linux/kernel.h>
 #include <linux/slab.h>
 #include <linux/task_work.h>
+#include <linux/thermal.h>
 #include <linux/rtc.h>
 #include <linux/init.h>
 #include <linux/timer.h>
@@ -24,10 +25,17 @@
 #include <linux/version.h>
 #include <linux/iio/consumer.h>
 #include <linux/alarmtimer.h>
+#include <linux/pm_wakeup.h>
+
 #include "touchpanel_common.h"
 #include "touchpanel_proc.h"
 #include "touch_comon_api/touch_comon_api.h"
+#include "touchpanel_prevention/touchpanel_prevention.h"
 #include "touchpanel_healthinfo/touchpanel_healthinfo.h"
+#include "touchpanel_healthinfo/touchpanel_exception.h"
+#ifdef CONFIG_TOUCHPANEL_ALGORITHM
+#include "touchpanel_algorithm/touchpanel_algorithm.h"
+#endif
 #ifndef CONFIG_REMOVE_OPLUS_FUNCTION
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
 #include<mt-plat/mtk_boot_common.h>
@@ -40,23 +48,17 @@
 #include <linux/fb.h>
 #include <linux/notifier.h>
 #endif
+
 #if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
-#include <linux/msm_drm_notify.h>
-#elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-#include <linux/soc/qcom/panel_event_notifier.h>
 #include <linux/msm_drm_notify.h>
 #include <drm/drm_panel.h>
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 #include <linux/msm_drm_notify.h>
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-#include <linux/mtk_panel_ext.h>
-#include <linux/mtk_disp_notify.h>
 #endif
 
 #if IS_ENABLED(CONFIG_TOUCHPANEL_NOTIFY)
 #include "touchpanel_notify/touchpanel_event_notify.h"
 #endif
-#define MAX_NODE_DATA_LENGTH         60
 
 /*******Part0:LOG TAG Declear************************/
 #if defined(CONFIG_TOUCHPANEL_MTK_PLATFORM) && defined(CONFIG_TOUCHIRQ_UPDATE_QOS)
@@ -73,24 +75,17 @@
 struct touchpanel_data *g_tp[TP_SUPPORT_MAX] = {NULL};
 static DEFINE_MUTEX(tp_core_lock);
 int cur_tp_index = 0;
-int chip_index = 0;
 EXPORT_SYMBOL(cur_tp_index);
 /*******Part2:declear Area********************************/
 static void speedup_resume(struct work_struct *work);
 static void lcd_trigger_load_tp_fw(struct work_struct *work);
 void esd_handle_switch(struct esd_information *esd_info, bool flag);
-void tp_delta_read_triggered_by_key(int index);
 
 #if IS_ENABLED(CONFIG_FB) || IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 static int fb_notifier_callback(struct notifier_block *self,
 				unsigned long event, void *data);
-#elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-static void ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
-		 struct panel_event_notification *event, void *client_data);
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-static int ts_mtk_drm_notifier_callback(struct notifier_block *nb,
-                unsigned long event, void *data);
 #endif
+
 
 static void tp_touch_release(struct touchpanel_data *ts);
 static void tp_btnkey_release(struct touchpanel_data *ts);
@@ -101,6 +96,7 @@ static int tp_control_cs_gpio(bool enable, unsigned int tp_index);
 static void lcd_tp_load_fw(unsigned int tp_index);
 static void lcd_tp_refresh_work(struct work_struct *work);
 static void lcd_tp_refresh_switch(unsigned int tp_index, int fps);
+static void tp_rate_calc(struct touchpanel_data *ts, tp_rate tp_rate_type);
 
 extern int preconfig_power_control(struct touchpanel_data *ts);
 extern  int reconfig_power_control(struct touchpanel_data *ts);
@@ -108,20 +104,19 @@ extern  int reconfig_power_control(struct touchpanel_data *ts);
 #if IS_ENABLED(CONFIG_TOUCHPANEL_NOTIFY)
 static int tp_gesture_enable_flag(unsigned int tp_index);
 extern int (*tp_gesture_enable_notifier)(unsigned int tp_index);
+extern int (*tp_cs_gpio_notifier)(bool enable, unsigned int tp_index);
+extern int (*tp_reset_gpio_notifier)(bool enable, unsigned int tp_index);
+extern void (*tp_ftm_extra_notifier)(unsigned int tp_index);
 #endif
 
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-#ifndef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
 extern enum boot_mode_t get_boot_mode(void);
-#endif
 #else
 extern int get_boot_mode(void);
 #endif
 
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-#ifndef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
 extern void primary_display_esd_check_enable(int enable);
-#endif
 #endif
 void display_esd_check_enable_bytouchpanel(bool enable);
 
@@ -151,6 +146,30 @@ bool inline is_ftm_boot_mode(struct touchpanel_data *ts)
  * switch work mode based on current params(gesture_enable, limit_enable, glove_enable)
  * Do not care the result: Return void type
  */
+
+int mode_switch_health(struct touchpanel_data *ts, work_mode mode, int flag)
+{
+	int ret = 0;
+
+	ret = ts->ts_ops->mode_switch(ts->chip_data, mode, flag);
+
+	if (ret < 0 && ts->health_monitor_support) {
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_REPORT,
+			   (MODE_NORMAL == mode) ? "mode_normal_switch_fail" :
+			   (MODE_EDGE == mode) ? "mode_edge_switch_fail" :
+			   (MODE_GESTURE == mode) ? "mode_gesture_switch_fail" :
+			   (MODE_CHARGE == mode) ? "mode_charge_switch_fail" :
+			   (MODE_GAME == mode) ? "mode_game_switch_fail" :
+			   (MODE_PALM_REJECTION == mode) ? "mode_palm_switch_fail" :
+			   (MODE_FACE_DETECT == mode) ? "mode_fd_switch_fail" :
+			   (MODE_HEADSET == mode) ? "mode_headset_switch_fail" :
+			   (MODE_WIRELESS_CHARGE == mode) ? "mode_wireless_charge_switch_fail" :
+			   (MODE_PEN == mode) ? "mode_pen_switch_fail" : "mode_others_switch_fail");
+	}
+
+	return ret;
+}
+
 void operate_mode_switch(struct touchpanel_data *ts)
 {
 	if (!ts->ts_ops->mode_switch) {
@@ -161,9 +180,9 @@ void operate_mode_switch(struct touchpanel_data *ts)
 	if (ts->is_suspended) {
 		if (TP_ALL_GESTURE_SUPPORT) {
 			if (TP_ALL_GESTURE_ENABLE) {
-				ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, ts->gesture_enable
+				mode_switch_health(ts, MODE_GESTURE, ts->gesture_enable
 							|| ts->fp_enable);
-				ts->ts_ops->mode_switch(ts->chip_data, MODE_NORMAL, true);
+				mode_switch_health(ts, MODE_NORMAL, true);
 
 				if (ts->fingerprint_underscreen_support) {
 					ts->ts_ops->enable_fingerprint(ts->chip_data, !!ts->fp_enable);
@@ -174,12 +193,12 @@ void operate_mode_switch(struct touchpanel_data *ts)
 				}
 
 			} else {
-				ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, false);
-				ts->ts_ops->mode_switch(ts->chip_data, MODE_SLEEP, true);
+				mode_switch_health(ts, MODE_GESTURE, false);
+				mode_switch_health(ts, MODE_SLEEP, true);
 			}
 
 		} else {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_SLEEP, true);
+			mode_switch_health(ts, MODE_SLEEP, true);
 		}
 
 	} else {
@@ -189,7 +208,7 @@ void operate_mode_switch(struct touchpanel_data *ts)
 				input_sync(ts->ps_input_dev);
 			}
 
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_FACE_DETECT, ts->fd_enable == 1);
+			mode_switch_health(ts, MODE_FACE_DETECT, ts->fd_enable == 1);
 		}
 
 		if (ts->fingerprint_underscreen_support) {
@@ -197,24 +216,32 @@ void operate_mode_switch(struct touchpanel_data *ts)
 		}
 
 		if (ts->black_gesture_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, false);
+			mode_switch_health(ts, MODE_GESTURE, false);
 		}
 
 		if (ts->fw_edge_limit_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_EDGE, ts->limit_enable);
+			mode_switch_health(ts, MODE_EDGE, ts->limit_enable);
 		}
 
 		if (ts->charger_pump_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_CHARGE, ts->is_usb_checked);
+			mode_switch_health(ts, MODE_CHARGE, ts->is_usb_checked);
 		}
 
 		if (ts->wireless_charger_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_WIRELESS_CHARGE,
+			mode_switch_health(ts, MODE_WIRELESS_CHARGE,
 						ts->is_wireless_checked);
 		}
 
 		if (ts->headset_pump_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_HEADSET, ts->is_headset_checked);
+			mode_switch_health(ts, MODE_HEADSET, ts->is_headset_checked);
+		}
+
+		if (ts->pen_support) {
+			ts->ts_ops->mode_switch(ts->chip_data, MODE_PEN, ts->is_pen_connected && !ts->is_pen_attracted);
+		}
+
+		if (ts->kernel_grip_support && ts->ts_ops->enable_kernel_grip) {
+			ts->ts_ops->enable_kernel_grip(ts->chip_data, ts->grip_info);
 		}
 
 		if (ts->smooth_level_array_support && ts->ts_ops->smooth_lv_set) {
@@ -229,7 +256,12 @@ void operate_mode_switch(struct touchpanel_data *ts)
 			ts->ts_ops->tp_refresh_switch(ts->chip_data, ts->lcd_fps);
 		}
 
-		ts->ts_ops->mode_switch(ts->chip_data, MODE_NORMAL, true);
+
+		if (ts->pen_support) {
+			mode_switch_health(ts, MODE_PEN, ts->is_pen_connected && !ts->is_pen_attracted);
+		}
+
+		mode_switch_health(ts, MODE_NORMAL, true);
 	}
 }
 EXPORT_SYMBOL(operate_mode_switch);
@@ -252,7 +284,7 @@ void switch_usb_state_work(struct work_struct *work)
 
 		if (!ts->is_suspended && (ts->suspend_state == TP_SPEEDUP_RESUME_COMPLETE)
 		    && !ts->loading_fw) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_CHARGE, ts->is_usb_checked);
+			mode_switch_health(ts, MODE_CHARGE, ts->is_usb_checked);
 
 			if (ts->smooth_level_array_support && ts->ts_ops->smooth_lv_set) {
 				if (ts->is_usb_checked) {
@@ -297,7 +329,7 @@ void switch_headset_work(struct work_struct *work)
 
 		if (!ts->is_suspended && (ts->suspend_state == TP_SPEEDUP_RESUME_COMPLETE)
 		    && !ts->loading_fw) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_HEADSET, ts->is_headset_checked);
+			mode_switch_health(ts, MODE_HEADSET, ts->is_headset_checked);
 		}
 	}
 
@@ -367,19 +399,29 @@ static inline void tp_touch_down(struct touchpanel_data *ts, struct point_info p
 
 		/*pressure_report_support*/
 		input_report_abs(ts->input_dev, ABS_MT_PRESSURE,
-				 points.touch_major);  
+				 points.touch_major);   /*add for fixing gripview tap no function issue*/
 	}
 
 	if (!CHK_BIT(ts->irq_slot, (1 << id))) {
 		TP_DETAIL(ts->tp_index, "first touch point id %d [%4d %4d %4d]\n", id, points.x,
 			  points.y, points.z);
+		if(id == 0 && tp_debug == 1 && ts->monitor_data.rate_min) {
+			tp_rate_calc(ts, TP_RATE_CLEAR);
+		}
 	}
 
 	input_report_abs(ts->input_dev, ABS_MT_POSITION_X, points.x);
 	input_report_abs(ts->input_dev, ABS_MT_POSITION_Y, points.y);
+	if(id == 0 && tp_debug == 1 && ts->monitor_data.rate_min) {
+		tp_rate_calc(ts, TP_RATE_CALC);
+	}
 
 	TP_SPECIFIC_PRINT(ts->tp_index, ts->point_num,
 			  "Touchpanel id %d :Down[%4d %4d %4d]\n", id, points.x, points.y, points.z);
+
+#ifndef TYPE_B_PROTOCOL
+	input_mt_sync(ts->input_dev);
+#endif
 }
 
 static inline void tp_touch_up(struct touchpanel_data *ts)
@@ -390,6 +432,9 @@ static inline void tp_touch_up(struct touchpanel_data *ts)
 
 	input_report_key(ts->input_dev, BTN_TOUCH, 0);
 	input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
+#ifndef TYPE_B_PROTOCOL
+	input_mt_sync(ts->input_dev);
+#endif
 }
 
 static void tp_exception_handle(struct touchpanel_data *ts)
@@ -409,6 +454,9 @@ static void tp_exception_handle(struct touchpanel_data *ts)
 	if (ts->fingerprint_underscreen_support) {
 		ts->fp_info.touch_state = 0;
 		touch_call_notifier_fp(&ts->fp_info);
+	}
+	if (ts->exception_upload_support) {
+		tp_exception_report(&ts->exception_data, EXCEP_IRQ, "tp_exception_handle", sizeof("tp_exception_handle"));
 	}
 }
 
@@ -488,7 +536,8 @@ static void tp_gesture_handle(struct touchpanel_data *ts)
 		gesture_info_temp.gesture_type == FRINGER_PRINTUP ? "(fingerprintup)" :
 		gesture_info_temp.gesture_type == SINGLE_TAP ? "single tap" :
 		gesture_info_temp.gesture_type == HEART ? "heart" :
-		gesture_info_temp.gesture_type == S_GESTURE ? "(S)" : "unknown");
+		gesture_info_temp.gesture_type == S_GESTURE ? "(S)" :
+		gesture_info_temp.gesture_type == PENDETECT ? "(pen detect)" : "unknown");
 
 	if (ts->health_monitor_support) {
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_GESTURE,
@@ -554,11 +603,9 @@ EXPORT_SYMBOL(tp_touch_btnkey_release);
 
 static void tp_touch_release(struct touchpanel_data *ts)
 {
-	int i = 0;
-	if (ts->en_touch_event_helper) {
-		post_message(ts->msg_list, 0, TYPE_RESET, NULL);
-	}
+#ifdef TYPE_B_PROTOCOL
 
+	int i = 0;
 
 	mutex_lock(&ts->report_mutex);
 
@@ -571,7 +618,12 @@ static void tp_touch_release(struct touchpanel_data *ts)
 	input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
 	input_sync(ts->input_dev);
 	mutex_unlock(&ts->report_mutex);
-
+#else
+	input_report_key(ts->input_dev, BTN_TOUCH, 0);
+	input_report_key(ts->input_dev, BTN_TOOL_FINGER, 0);
+	input_mt_sync(ts->input_dev);
+	input_sync(ts->input_dev);
+#endif
 	TP_INFO(ts->tp_index,
 		"release all touch point and key, clear tp touch down flag\n");
 	ts->view_area_touched = 0; /*realse all touch point,must clear this flag*/
@@ -579,30 +631,47 @@ static void tp_touch_release(struct touchpanel_data *ts)
 	ts->irq_slot = 0;
 }
 
-static inline void tp_touch_helper_handle(struct touchpanel_data *ts)
+#ifdef CONFIG_TOUCHPANEL_ALGORITHM
+static void special_touch_handle(struct touchpanel_data *ts)
 {
 	int obj_attention = 0;
-	struct point_info points[MAX_FINGER_NUM];
+	int i = 0;
+	static int touch_report_num = 0;
+	struct point_info points[10];
 
-	if (!ts->ts_ops->get_touch_points_help) {
-		TP_INFO(ts->tp_index, "not support ts->ts_ops->get_touch_points_help callback\n");
+	if (!ts->ts_ops->special_points_report) {
 		return;
 	}
 
-	memset(points, 0, sizeof(points));
+	obj_attention = ts->ts_ops->special_points_report(ts->chip_data, points,
+			ts->max_num);
 
-	obj_attention = ts->ts_ops->get_touch_points_help(ts->chip_data,
-				points,
-				ts->max_num,
-				&ts->resolution_info);
-	if (obj_attention == -EINVAL) {
-		TP_INFO(ts->tp_index, "Invalid points, ignore..\n");
+	if (obj_attention <= 0) {
 		return;
 	}
 
-	post_message(ts->msg_list,sizeof(points), TYPE_POINT, (u8*)&points);
-	return;
+	for (i = 0; i < ts->max_num; i++) {
+		if (((obj_attention & TOUCH_BIT_CHECK) >> i) & 0x01
+		    && (points[i].status == 0)) { /* buf[0] == 0 is wrong point, no process*/
+			continue;
+		}
+
+		if (((obj_attention & TOUCH_BIT_CHECK) >> i) & 0x01
+		    && (points[i].status != 0)) {
+			TPD_DEBUG("special point report\n");
+#ifdef TYPE_B_PROTOCOL
+			input_mt_slot(ts->input_dev, i);
+			input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 1);
+#endif
+			touch_report_num++;
+			tp_touch_down(ts, points[i], touch_report_num, i);
+			SET_BIT(ts->irq_slot, (1 << i));
+		}
+	}
+
+	input_sync(ts->input_dev);
 }
+#endif
 
 static inline void tp_touch_handle(struct touchpanel_data *ts)
 {
@@ -615,6 +684,10 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 	    || ((!ts->ts_ops->get_touch_points_auto) && ts->enable_point_auto_change)) {
 		TP_INFO(ts->tp_index, "not support ts->ts_ops->get_touch_points callback\n");
 		return;
+	}
+
+	if(tp_debug == 1 && ts->monitor_data.rate_min) {
+		tp_rate_calc(ts, TP_RATE_START);
 	}
 
 	memset(points, 0, sizeof(points));
@@ -637,6 +710,18 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 	}
 
 	mutex_lock(&ts->report_mutex);
+	if (ts->kernel_grip_support && (!ts->grip_no_driver_support)) {
+		obj_attention = notify_prevention_handle(ts->grip_info, obj_attention, points);
+		if (ts->health_monitor_support) {
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_GRIP, ts->grip_info);
+		}
+	}
+
+#ifdef CONFIG_TOUCHPANEL_ALGORITHM
+	obj_attention = touch_algorithm_handle(ts, obj_attention, points);
+	special_touch_handle(ts);
+
+#endif
 
 	if ((obj_attention & TOUCH_BIT_CHECK) != 0) {
 		ts->up_status = false;
@@ -649,8 +734,10 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 
 			if (((obj_attention & TOUCH_BIT_CHECK) >> i) & 0x01
 			    && (points[i].status != 0)) {
+#ifdef TYPE_B_PROTOCOL
 				input_mt_slot(ts->input_dev, i);
 				input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 1);
+#endif
 				ts->touch_report_num++;
 				tp_touch_down(ts, points[i], ts->touch_report_num, i);
 				SET_BIT(ts->irq_slot, (1 << i));
@@ -675,11 +762,22 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 					  &points[i], sizeof(struct point_info), \
 					  sizeof(struct point_info));
 			}
+
+#ifdef TYPE_B_PROTOCOL
+
 			else {
 				input_mt_slot(ts->input_dev, i);
 
+				if (ts->kernel_grip_support && ts->grip_info
+				    && ts->grip_info->eli_reject_status[i]
+				    && !(ts->grip_info->grip_disable_level & (1 << GRIP_DISABLE_UP2CANCEL))) {
+					input_report_abs(ts->input_dev, ABS_MT_PRESSURE, UP2CANCEL_PRESSURE_VALUE);
+				}
+
 				input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 0);
 			}
+
+#endif
 		}
 
 		if (touch_near_edge ==
@@ -698,12 +796,14 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 		finger_num = 0;
 		finger_num_center = 0;
 		ts->touch_report_num = 0;
+#ifdef TYPE_B_PROTOCOL
 
 		for (i = 0; i < ts->max_num; i++) {
 			input_mt_slot(ts->input_dev, i);
 			input_mt_report_slot_state(ts->input_dev, MT_TOOL_FINGER, 0);
 		}
 
+#endif
 		tp_touch_up(ts);
 		ts->view_area_touched = 0;
 		ts->irq_slot = 0;
@@ -721,6 +821,8 @@ static inline void tp_touch_handle(struct touchpanel_data *ts)
 	if (ts->health_monitor_support) {
 		ts->monitor_data.touch_points = points;
 		ts->monitor_data.touch_num = finger_num;
+		ts->monitor_data.direction = ts->grip_info ? ts->grip_info->touch_dir :
+					     ts->limit_enable;
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_TOUCH, &obj_attention);
 	}
 }
@@ -891,6 +993,52 @@ static void tp_fingerprint_handle(struct touchpanel_data *ts)
 	}
 }
 
+static void tp_pen_handle(struct touchpanel_data *ts)
+{
+	struct pen_info pen_info;
+	static int point_num = 0;
+
+	if (!ts->ts_ops->get_pen_points) {
+		TPD_INFO("not support get_pen_points callback.\n");
+		return;
+	}
+
+	memset(&pen_info, 0, sizeof(pen_info));
+
+	ts->ts_ops->get_pen_points(ts->chip_data, &pen_info);
+
+	if (pen_info.status == 1) {
+		input_report_abs(ts->pen_input_dev, ABS_X, pen_info.x);
+		input_report_abs(ts->pen_input_dev, ABS_Y, pen_info.y);
+		input_report_abs(ts->pen_input_dev, ABS_PRESSURE, pen_info.z);
+		input_report_abs(ts->pen_input_dev, ABS_TILT_X, pen_info.tilt_x);
+		input_report_abs(ts->pen_input_dev, ABS_TILT_Y, pen_info.tilt_y);
+		input_report_abs(ts->pen_input_dev, ABS_DISTANCE, pen_info.d);
+		input_report_key(ts->pen_input_dev, BTN_TOUCH, !!pen_info.z);
+		input_report_key(ts->pen_input_dev, BTN_TOOL_PEN, !!pen_info.z || !!pen_info.d);
+		input_report_key(ts->pen_input_dev, BTN_STYLUS, pen_info.btn1);
+		input_report_key(ts->pen_input_dev, BTN_STYLUS2, pen_info.btn2);
+
+		TPD_SPECIFIC_PRINT(point_num, "Pen Down[%4d %4d %4d:%4d %4d]\n", \
+			pen_info.x, pen_info.y, pen_info.z, pen_info.tilt_x, pen_info.tilt_y);
+	} else if (pen_info.status == 0) {
+		input_report_abs(ts->pen_input_dev, ABS_X, 0);
+		input_report_abs(ts->pen_input_dev, ABS_Y, 0);
+		input_report_abs(ts->pen_input_dev, ABS_PRESSURE, 0);
+		input_report_abs(ts->pen_input_dev, ABS_TILT_X, 0);
+		input_report_abs(ts->pen_input_dev, ABS_TILT_Y, 0);
+		input_report_abs(ts->pen_input_dev, ABS_DISTANCE, 0);
+		input_report_key(ts->pen_input_dev, BTN_TOUCH, 0);
+		input_report_key(ts->pen_input_dev, BTN_TOOL_PEN, 0);
+		input_report_key(ts->pen_input_dev, BTN_STYLUS, 0);
+		input_report_key(ts->pen_input_dev, BTN_STYLUS2, 0);
+
+		TPD_DETAIL("Pen Up\n");
+	}
+
+	input_sync(ts->pen_input_dev);
+}
+
 static inline void tp_work_func(struct touchpanel_data *ts)
 {
 	u32 cur_event = 0;
@@ -913,18 +1061,14 @@ static inline void tp_work_func(struct touchpanel_data *ts)
 
 	if (CHK_BIT(cur_event, IRQ_TOUCH) || CHK_BIT(cur_event, IRQ_BTN_KEY)
 	    || CHK_BIT(cur_event, IRQ_FW_HEALTH) || \
-	    CHK_BIT(cur_event, IRQ_FACE_STATE) || CHK_BIT(cur_event, IRQ_FINGERPRINT)) {
+	    CHK_BIT(cur_event, IRQ_FACE_STATE) || CHK_BIT(cur_event, IRQ_FINGERPRINT) || \
+		CHK_BIT(cur_event, IRQ_PEN)) {
 		if (CHK_BIT(cur_event, IRQ_BTN_KEY)) {
 			tp_btnkey_handle(ts);
 		}
 
 		if (CHK_BIT(cur_event, IRQ_TOUCH)) {
-			if (ts->en_touch_event_helper) {
-				tp_touch_helper_handle(ts);
-			} else {
-				tp_touch_handle(ts);
-			}
-
+			tp_touch_handle(ts);
 		}
 
 		if (CHK_BIT(cur_event, IRQ_FW_HEALTH) && (!ts->is_suspended)) {
@@ -937,6 +1081,10 @@ static inline void tp_work_func(struct touchpanel_data *ts)
 
 		if (CHK_BIT(cur_event, IRQ_FINGERPRINT) && ts->fp_enable) {
 			tp_fingerprint_handle(ts);
+		}
+
+		if (CHK_BIT(cur_event, IRQ_PEN) && ts->pen_support) {
+			tp_pen_handle(ts);
 		}
 
 	} else if (CHK_BIT(cur_event, IRQ_GESTURE)) {
@@ -956,7 +1104,6 @@ static inline void tp_work_func(struct touchpanel_data *ts)
 	}
 }
 
-#define TP_FWUP_HEADER    "FwUp"
 static void tp_fw_update_work(struct work_struct *work)
 {
 	const struct firmware *fw = NULL;
@@ -997,9 +1144,7 @@ static void tp_fw_update_work(struct work_struct *work)
 
 	display_esd_check_enable_bytouchpanel(0);
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-#ifndef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
 	primary_display_esd_check_enable(0); /*avoid rst pulled to low while updating*/
-#endif
 #endif
 
 	if (ts->ts_ops->fw_update) {
@@ -1043,12 +1188,6 @@ static void tp_fw_update_work(struct work_struct *work)
 				ret = request_firmware_select(&fw, ts->panel_data.fw_name, ts->dev);
 
 				if (!ret) {
-					if (fw->size > sizeof(TP_FWUP_HEADER)) {
-						TP_INFO(ts->tp_index, "fw_header:%*ph\n", sizeof(TP_FWUP_HEADER) - 1, fw->data);
-						if (!strncmp(fw->data, TP_FWUP_HEADER, sizeof(TP_FWUP_HEADER) - 1)) {
-							TP_INFO(ts->tp_index, "error ! fw_header is signed,do not update\n");
-						}
-					}
 					break;
 				}
 			}
@@ -1086,6 +1225,9 @@ static void tp_fw_update_work(struct work_struct *work)
 			if (ts->health_monitor_support) {
 				tp_healthinfo_report(&ts->monitor_data, HEALTH_FW_UPDATE, "FW_Request_Failed");
 			}
+			if (ts->exception_upload_support) {
+				tp_exception_report(&ts->exception_data, EXCEP_FW_UPDATE, "FW_Request_Failed", sizeof("FW_Request_Failed"));
+			}
 
 			goto EXIT;
 		}
@@ -1100,9 +1242,7 @@ EXIT:
 
 	display_esd_check_enable_bytouchpanel(1);
 #ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-#ifndef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
 	primary_display_esd_check_enable(1); /*avoid rst pulled to low while updating*/
-#endif
 #endif
 
 	if (ts->esd_handle_support) {
@@ -1121,6 +1261,11 @@ EXIT:
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_FW_UPDATE_COST, &start_time);
 	}
 
+	if (ts->exception_upload_support) {
+		if (fw_update_result == FW_UPDATE_ERROR || fw_update_result == FW_UPDATE_FATAL) {
+			tp_exception_report(&ts->exception_data, EXCEP_FW_UPDATE, "FW_Update_Failed", sizeof("FW_Update_Failed"));
+		}
+	}
 
 	ts->force_update = 0;
 
@@ -1141,11 +1286,7 @@ static irqreturn_t tp_irq_thread_fn(int irq, void *dev_id)
 
 	if (ts->pm_qos_state && !ts->is_suspended && !ts->touch_count) {
 		ts->pm_qos_value = PM_QOS_TOUCH_WAKEUP_VALUE;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
-		dev_pm_qos_update_request(&ts->pm_qos_req, ts->pm_qos_value);
-#else
 		pm_qos_update_request(&ts->pm_qos_req, ts->pm_qos_value);
-#endif
 	}
 
 #endif
@@ -1163,13 +1304,13 @@ static irqreturn_t tp_irq_thread_fn(int irq, void *dev_id)
 	if (ts->bus_ready == false) {
 		/*TP_INFO(ts->tp_index, "Wait device resume!");*/
 		wait_event_interruptible_timeout(ts->wait,
-						 ts->bus_ready,
-						 msecs_to_jiffies(ts->irq_need_dev_resume_time));
+										ts->bus_ready,
+										msecs_to_jiffies(ts->irq_need_dev_resume_time));
 		/*TP_INFO(ts->tp_index, "Device maybe resume!");*/
 	}
 
 	if (ts->bus_ready == false) {
-		TP_INFO(ts->tp_index, "The device not resume %d ms!", ts->irq_need_dev_resume_time);
+		TP_INFO(ts->tp_index, "The device not resume %dms!", ts->irq_need_dev_resume_time);
 		goto exit;
 	}
 
@@ -1181,7 +1322,14 @@ static irqreturn_t tp_irq_thread_fn(int irq, void *dev_id)
 	/*for normal ic*/
 	if (ts->int_mode == BANNABLE) {
 		mutex_lock(&ts->mutex);
-		tp_work_func(ts);
+		/*Only if the following four conditions are met at the same time:
+		 tp is suspend && gesture is disable && irq flag is edge-triggered && disable_suspend_irq_handler is set to 1,
+		tp_work_func(ts)  will be ignored */
+		if (!ts->is_suspended || (TP_ALL_GESTURE_SUPPORT && TP_ALL_GESTURE_ENABLE) ||
+				!(ts->irq_flags & (IRQF_TRIGGER_RISING | IRQF_TRIGGER_FALLING)) ||
+				!(ts->disable_suspend_irq_handler)) {
+			tp_work_func(ts);
+		}
 		mutex_unlock(&ts->mutex);
 
 	} else { /*for some ic such as synaptic tcm need get data by interrupt*/
@@ -1198,15 +1346,10 @@ exit:
 
 	if (PM_QOS_TOUCH_WAKEUP_VALUE == ts->pm_qos_value) {
 		ts->pm_qos_value = PM_QOS_DEFAULT_VALUE;
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5,10,0)
-		dev_pm_qos_update_request(&ts->pm_qos_req, ts->pm_qos_value);
-#else
 		pm_qos_update_request(&ts->pm_qos_req, ts->pm_qos_value);
-#endif
 	}
 
 #endif
-
         if (ts->ws) {
                 __pm_relax(ts->ws);
         }
@@ -1324,6 +1467,30 @@ static int init_input_device(struct touchpanel_data *ts)
 	} else {
 		ts->input_dev->name = TPD_DEVICE"1";
 	}
+
+	if(ts->pen_support) {
+		ts->pen_input_dev = input_allocate_device();
+		if (ts->pen_input_dev == NULL) {
+			ret = -ENOMEM;
+			TPD_INFO("Failed to allocate pen input device\n");
+			return ret;
+		}
+
+		if (!ts->tp_index) {
+			ts->pen_input_dev->name = TPD_DEVICE"_pen";
+		} else {
+			ts->pen_input_dev->name = TPD_DEVICE"_pen1";
+		}
+		set_bit(EV_SYN, ts->pen_input_dev->evbit);
+		set_bit(EV_ABS, ts->pen_input_dev->evbit);
+		set_bit(EV_KEY, ts->pen_input_dev->evbit);
+		set_bit(BTN_TOUCH, ts->pen_input_dev->keybit);
+		set_bit(BTN_TOOL_PEN, ts->pen_input_dev->keybit);
+		set_bit(BTN_STYLUS, ts->pen_input_dev->keybit);
+		set_bit(BTN_STYLUS2, ts->pen_input_dev->keybit);
+		set_bit(INPUT_PROP_DIRECT, ts->pen_input_dev->propbit);
+	}
+
 	set_bit(EV_SYN, ts->input_dev->evbit);
 	set_bit(EV_ABS, ts->input_dev->evbit);
 	set_bit(EV_KEY, ts->input_dev->evbit);
@@ -1353,7 +1520,7 @@ static int init_input_device(struct touchpanel_data *ts)
 	case TYPE_PROPERTIES : {
 		if (!board_properties) {
 			/*If more ic support more key, but have only one path*/
-			TP_INFO(ts->tp_index, "Type 1: using board_properties\n");
+			TPD_INFO("Type 1: using board_properties\n");
 			vk_properties_kobj = kobject_create_and_add("board_properties", NULL);
 
 			if (vk_properties_kobj) {
@@ -1361,7 +1528,7 @@ static int init_input_device(struct touchpanel_data *ts)
 			}
 
 			if (!vk_properties_kobj || ret) {
-				TP_INFO(ts->tp_index, "failed to create board_properties\n");
+				TPD_INFO("failed to create board_properties\n");
 			}
 
 			board_properties = true;
@@ -1392,9 +1559,13 @@ static int init_input_device(struct touchpanel_data *ts)
 		break;
 	}
 
-	input_mt_init_slots(ts->input_dev, ts->max_num, 0);
+#ifdef TYPE_B_PROTOCOL
+	ret = input_mt_init_slots(ts->input_dev, ts->max_num, 0);
+	if (!ret)
+		TP_INFO(ts->tp_index, "%s: input_mt_init_slots return %d\n", __func__, ret);
+#endif
 	input_set_abs_params(ts->input_dev, ABS_MT_TOUCH_MAJOR, 0, 255, 0, 0);
-	//input_set_abs_params(ts->input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);
+	/*input_set_abs_params(ts->input_dev, ABS_MT_PRESSURE, 0, 255, 0, 0);*/
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_X, 0,
 			     ts->resolution_info.max_x - 1, 0, 0);
 	input_set_abs_params(ts->input_dev, ABS_MT_POSITION_Y, 0,
@@ -1422,224 +1593,21 @@ static int init_input_device(struct touchpanel_data *ts)
 		}
 	}
 
+	if(ts->pen_support) {
+		input_set_abs_params(ts->pen_input_dev, ABS_X, 0, ts->resolution_info.max_x * 2 - 1, 0, 0);
+		input_set_abs_params(ts->pen_input_dev, ABS_Y, 0, ts->resolution_info.max_y * 2 - 1, 0, 0);
+		input_set_abs_params(ts->pen_input_dev, ABS_PRESSURE, 0, 4095, 0, 0);
+		input_set_abs_params(ts->pen_input_dev, ABS_DISTANCE, 0, 1, 0, 0);
+		input_set_abs_params(ts->pen_input_dev, ABS_TILT_X, -60, 60, 0, 0);
+		input_set_abs_params(ts->pen_input_dev, ABS_TILT_Y, -60, 60, 0, 0);
+		if (input_register_device(ts->pen_input_dev)) {
+			TPD_INFO("%s: Failed to register pen input device\n", __func__);
+			input_free_device(ts->pen_input_dev);
+			return -1;
+		}
+	}
+
 	return 0;
-}
-
-static struct device_node* is_support_child_node (struct device *dev,  struct touchpanel_data *ts)
-{
-	struct device_node *child_node = NULL;
-	char *chip_name = NULL;
-	char *panel_node = kzalloc(MAX_NODE_DATA_LENGTH, GFP_KERNEL|GFP_DMA);
-	struct device_node *np = NULL;
-	if (!ts || !dev) {
-	    kfree(panel_node);
-	    return child_node;
-	}
-
-	np = dev->of_node;
-	if(chip_index > 0 && chip_index <= ts->panel_data.chip_num) {
-		chip_name = ts->panel_data.chip_name[chip_index];
-	} else {
-		chip_name = ts->panel_data.chip_name[0];
-	}
-	snprintf(panel_node, MAX_NODE_DATA_LENGTH, "%s_PANEL%d", chip_name, ts->panel_data.tp_type);
-	TPD_INFO("%s: panel_node = %s.\n", __func__, panel_node);
-	child_node = of_get_child_by_name(np, panel_node);
-
-	if (!child_node) {
-		TP_INFO(ts->tp_index, "child_node not defined.\n");
-	}
-
-	kfree(panel_node);
-	return child_node;
-}
-
-/**
- * init_panel_config - parse panel dts, get resource defined in Dts
- * If you want to configure multiple panels, you can combine them "chip_name"_"panle_name"
- */
-static void init_panel_config(struct device *dev, struct touchpanel_data *ts)
-{
-	struct device_node *chip_np;
-	int temp_array[8];
-	int tx_rx_num[2];
-	int rc = 0;
-	int i = 0;
-	int val = 0;
-	chip_np = is_support_child_node(dev, ts);
-	if (!chip_np) {
-		return;
-	}
-
-	/* irq gpio*/
-	ts->hw_res.irq_gpio = of_get_named_gpio_flags(chip_np, "irq-gpio", 0,
-			      &(ts->irq_flags));
-	if (gpio_is_valid(ts->hw_res.irq_gpio)) {
-		rc = devm_gpio_request(dev, ts->hw_res.irq_gpio, "tp_irq_gpio");
-		if (rc) {
-			TP_INFO(ts->tp_index, "unable to request gpio [%d]\n", ts->hw_res.irq_gpio);
-		}
-	} else {
-		TP_INFO(ts->tp_index, "irq-gpio not specified in dts\n");
-	}
-
-	/* reset gpio*/
-	ts->hw_res.reset_gpio = of_get_named_gpio(chip_np, "reset-gpio", 0);
-	if (gpio_is_valid(ts->hw_res.reset_gpio)) {
-		rc = devm_gpio_request(dev, ts->hw_res.reset_gpio, "reset-gpio");
-		if (rc) {
-			TP_INFO(ts->tp_index, "unable to request gpio [%d]\n", ts->hw_res.reset_gpio);
-		}
-	} else {
-		TP_INFO(ts->tp_index, "ts->reset-gpio not specified\n");
-	}
-
-	TP_INFO(ts->tp_index, "%s : irq_gpio = %d, irq_flags = 0x%x, reset_gpio = %d\n",
-		 __func__, ts->hw_res.irq_gpio, ts->irq_flags, ts->hw_res.reset_gpio);
-		/* resolution info*/
-	rc = of_property_read_u32(chip_np, "touchpanel,max-num-support", &ts->max_num);
-
-	if (rc) {
-		TP_INFO(ts->tp_index, "ts->max_num not specified\n");
-		ts->max_num = 10;
-	}
-
-	rc = of_property_read_u32_array(chip_np, "touchpanel,tx-rx-num", tx_rx_num, 2);
-
-	if (rc) {
-		TP_INFO(ts->tp_index, "tx-rx-num not set\n");
-		ts->hw_res.tx_num = 0;
-		ts->hw_res.rx_num = 0;
-
-	} else {
-		ts->hw_res.tx_num = tx_rx_num[0];
-		ts->hw_res.rx_num = tx_rx_num[1];
-	}
-
-	TP_INFO(ts->tp_index, "tx_num = %d, rx_num = %d \n", ts->hw_res.tx_num, ts->hw_res.rx_num);
-
-	rc = of_property_read_u32_array(chip_np, "touchpanel,display-coords", temp_array, 2);
-
-	if (rc) {
-		TP_INFO(ts->tp_index, "Lcd size not set\n");
-		ts->resolution_info.LCD_WIDTH = 0;
-		ts->resolution_info.LCD_HEIGHT = 0;
-
-	} else {
-		ts->resolution_info.LCD_WIDTH = temp_array[0];
-		ts->resolution_info.LCD_HEIGHT = temp_array[1];
-	}
-
-	rc = of_property_read_u32_array(chip_np, "touchpanel,panel-coords", temp_array, 2);
-
-	if (rc) {
-		ts->resolution_info.max_x = 0;
-		ts->resolution_info.max_y = 0;
-
-	} else {
-		ts->resolution_info.max_x = temp_array[0];
-		ts->resolution_info.max_y = temp_array[1];
-	}
-
-	rc = of_property_read_u32_array(chip_np, "touchpanel,touchmajor-limit", temp_array,
-					2);
-
-	if (rc) {
-		ts->touch_major_limit.width_range = 0;
-		ts->touch_major_limit.height_range = 54;    /*set default value*/
-
-	} else {
-		ts->touch_major_limit.width_range = temp_array[0];
-		ts->touch_major_limit.height_range = temp_array[1];
-	}
-
-	TP_INFO(ts->tp_index, "LCD_WIDTH = %d, LCD_HEIGHT = %d, max_x = %d, max_y = %d, limit_witdh = %d, limit_height = %d\n",
-		 ts->resolution_info.LCD_WIDTH, ts->resolution_info.LCD_HEIGHT,
-		 ts->resolution_info.max_x, ts->resolution_info.max_y, \
-		 ts->touch_major_limit.width_range, ts->touch_major_limit.height_range);
-	rc = of_property_read_u32_array(chip_np, "touchpanel,smooth-level", temp_array, SMOOTH_LEVEL_NUM);
-	if (rc) {
-		TP_INFO(ts->tp_index, "smooth_level_array not specified %d\n", rc);
-	} else {
-		ts->smooth_level_array_support = true;
-		for (i=0; i < SMOOTH_LEVEL_NUM; i++) {
-			ts->smooth_level_array[i] = temp_array[i];
-		}
-
-		rc = of_property_read_u32_array(chip_np,
-						"touchpanel,smooth-level-charging",
-						temp_array,
-						SMOOTH_LEVEL_NUM);
-		if (rc) {
-			TP_INFO(ts->tp_index, "smooth_level_charging_array not specified %d\n", rc);
-			for (i=0; i < SMOOTH_LEVEL_NUM; i++) {
-				ts->smooth_level_charging_array[i] = ts->smooth_level_array[i];
-			}
-		} else {
-			for (i=0; i < SMOOTH_LEVEL_NUM; i++) {
-				ts->smooth_level_charging_array[i] = temp_array[i];
-			}
-		}
-		ts->smooth_level_used_array = (u32 *)&(ts->smooth_level_array);
-	}
-
-	rc = of_property_read_u32_array(chip_np, "touchpanel,sensitive-level", temp_array, SENSITIVE_LEVEL_NUM);
-	if (rc) {
-		TP_INFO(ts->tp_index, "sensitive_level_array not specified %d\n", rc);
-	} else {
-		ts->sensitive_level_array_support = true;
-		for (i=0; i < SENSITIVE_LEVEL_NUM; i++) {
-			ts->sensitive_level_array[i] = temp_array[i];
-		}
-
-		rc = of_property_read_u32_array(chip_np,
-						"touchpanel,sensitive-level-charging",
-						temp_array,
-						SENSITIVE_LEVEL_NUM);
-		if (rc) {
-			TP_INFO(ts->tp_index, "sensitive_charging_array not specified %d\n", rc);
-			for (i=0; i < SENSITIVE_LEVEL_NUM; i++) {
-				ts->sensitive_level_charging_array[i] = ts->sensitive_level_array[i];
-			}
-		} else {
-			for (i=0; i < SENSITIVE_LEVEL_NUM; i++) {
-				ts->sensitive_level_charging_array[i] = temp_array[i];
-			}
-		}
-		ts->sensitive_level_used_array = (u32 *)&(ts->sensitive_level_array);
-	}
-
-	rc = of_property_read_u32(chip_np, "touchpanel,single-optimized-time", &ts->single_optimized_time);
-	if (rc) {
-		TP_INFO(ts->tp_index, "ts->single_optimized_time not specified\n");
-		ts->single_optimized_time = 0;
-		ts->optimized_show_support = false;
-	} else {
-		ts->total_operate_times = 0;
-		ts->optimized_show_support = true;
-	}
-
-	rc = of_property_read_u32(chip_np, "touchpanel,high-frame-rate-time", &ts->high_frame_rate_time);
-	if (rc) {
-		TP_INFO(ts->tp_index, "ts->high_frame_rate_time not specified or support\n");
-		ts->high_frame_rate_time = 0;
-		ts->high_frame_rate_support = false;
-	} else {
-		ts->high_frame_rate_support = true;
-	}
-
-	/* interrupt mode*/
-	ts->int_mode = BANNABLE;
-	rc = of_property_read_u32(chip_np, "touchpanel,int-mode", &val);
-
-	if (rc) {
-		TP_INFO(ts->tp_index, "int-mode not specified\n");
-
-	} else {
-		if (val < INTERRUPT_MODE_MAX) {
-			ts->int_mode = val;
-		}
-	}
 }
 
 /**
@@ -1661,24 +1629,6 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	int size = 0;
 	char data_buf[32];
 	np = dev->of_node;
-
-
-	/* tp_index*/
-	rc = of_property_read_u32(np, "touchpanel,tp-index", &ts->tp_index);
-
-	if (rc) {
-		TPD_INFO("ts->tp_index not specified\n");
-		ts->tp_index = 0;
-
-	} else {
-		if (ts->tp_index >= TP_SUPPORT_MAX) {
-			TPD_INFO("ts->tp_index is big than %d\n", TP_SUPPORT_MAX);
-			ts->tp_index = 0;
-		}
-	}
-
-	cur_tp_index = ts->tp_index;
-	TPD_INFO("ts->tp_index is %d\n",  cur_tp_index);
 
 	ts->register_is_16bit       = of_property_read_bool(np, "register-is-16bit");
 	ts->esd_handle_support      = of_property_read_bool(np, "esd_handle_support");
@@ -1720,21 +1670,32 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 				     "noise_modetest_support");
 	ts->fw_update_in_probe_with_headfile = of_property_read_bool(np,
 					       "fw_update_in_probe_with_headfile");
+	ts->kernel_grip_support     = of_property_read_bool(np, "kernel_grip_support");
+	ts->grip_no_driver_support = of_property_read_bool(np, "grip_no_driver_support");
 	ts->report_rate_white_list_support = of_property_read_bool(np,
 					     "report_rate_white_list_support");
 
 	ts->lcd_tp_refresh_support = of_property_read_bool(np, "lcd_tp_refresh_support");
 	ts->enable_point_auto_change = of_property_read_bool(np, "enable_point_auto_change");
 	ts->temperature_detect_support = of_property_read_bool(np, "temperature_detect_support");
-	ts->auto_test_need_cal_support = of_property_read_bool(np, "auto_test_need_cal_support");
+	ts->temperature_detect_shellback_support = of_property_read_bool(np, "temperature_detect_shellback_support");
 	ts->snr_read_support = of_property_read_bool(np, "snr_read_support");
+	ts->exception_upload_support = of_property_read_bool(np,
+				     "exception_upload_support");
+	ts->sportify_aod_gesture_support = of_property_read_bool(np,
+							 "sportify_aod_gesture_support");
+	if (!ts->sportify_aod_gesture_support) {
+		TP_INFO(ts->tp_index, "not support sportify_aod_gesture\n");
+	}
 
+	ts->pen_support             = of_property_read_bool(np, "pen_support");
+	ts->chip_type_cascade = of_property_read_bool(np, "chip_type_cascade");
 
 	rc = of_property_read_u32(np, "vdd_2v8_volt", &ts->hw_res.vdd_volt);
 
 	if (rc < 0) {
 		ts->hw_res.vdd_volt = 0;
-		TP_INFO(ts->tp_index, "vdd_2v8_volt not defined\n");
+		TPD_INFO("vdd_2v8_volt not defined\n");
 	}
 
 	/* irq gpio*/
@@ -1745,11 +1706,11 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		rc = devm_gpio_request(dev, ts->hw_res.irq_gpio, "tp_irq_gpio");
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "unable to request gpio [%d]\n", ts->hw_res.irq_gpio);
+			TPD_INFO("unable to request gpio [%d]\n", ts->hw_res.irq_gpio);
 		}
 
 	} else {
-		TP_INFO(ts->tp_index, "irq-gpio not specified in dts\n");
+		TPD_INFO("irq-gpio not specified in dts\n");
 	}
 
 	/* reset gpio*/
@@ -1758,14 +1719,14 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		rc = devm_gpio_request(dev, ts->hw_res.reset_gpio, "reset-gpio");
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "unable to request gpio [%d]\n", ts->hw_res.reset_gpio);
+			TPD_INFO("unable to request gpio [%d]\n", ts->hw_res.reset_gpio);
 		}
 
 	} else {
-		TP_INFO(ts->tp_index, "ts->reset-gpio not specified\n");
+		TPD_INFO("ts->reset-gpio not specified\n");
 	}
 
-	TP_INFO(ts->tp_index, "%s : irq_gpio = %d, irq_flags = 0x%x, reset_gpio = %d\n",
+	TPD_INFO("%s : irq_gpio = %d, irq_flags = 0x%x, reset_gpio = %d\n",
 		 __func__, ts->hw_res.irq_gpio, ts->irq_flags, ts->hw_res.reset_gpio);
 
 	/* spi cs gpio */
@@ -1773,22 +1734,22 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	if (gpio_is_valid(ts->hw_res.cs_gpio)) {
 		rc = gpio_request(ts->hw_res.cs_gpio, "cs-gpio");
 		if (rc)
-			TP_INFO(ts->tp_index, "unable to request gpio [%d]\n", ts->hw_res.cs_gpio);
+			TPD_INFO("unable to request gpio [%d]\n", ts->hw_res.cs_gpio);
 		else
-			TP_INFO(ts->tp_index, "%s : irq_gpio = %d\n", __func__, ts->hw_res.cs_gpio);
+			TPD_INFO("%s : cs_gpio = %d\n", __func__, ts->hw_res.cs_gpio);
 	} else {
-		TP_INFO(ts->tp_index, "ts->cs-gpio not specified\n");
+		TPD_INFO("ts->cs-gpio not specified\n");
 	}
 	ts->hw_res.pinctrl = devm_pinctrl_get(dev);
 
 	if (IS_ERR_OR_NULL(ts->hw_res.pinctrl)) {
-		TP_INFO(ts->tp_index, "Getting pinctrl handle failed");
+		TPD_INFO("Getting pinctrl handle failed");
 	} else {
 		ts->hw_res.pin_set_high = pinctrl_lookup_state(ts->hw_res.pinctrl,
 					  "pin_set_high");
 
 		if (IS_ERR_OR_NULL(ts->hw_res.pin_set_high)) {
-			TP_INFO(ts->tp_index, "Failed to get the high state pinctrl handle\n");
+			TPD_INFO("Failed to get the high state pinctrl handle\n");
 		}
 
 
@@ -1796,7 +1757,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 					 "pin_set_low");
 
 		if (IS_ERR_OR_NULL(ts->hw_res.pin_set_low)) {
-			TP_INFO(ts->tp_index, " Failed to get the low state pinctrl handle\n");
+			TPD_INFO(" Failed to get the low state pinctrl handle\n");
 		}
 
 		ts->hw_res.pin_cs_high = pinctrl_lookup_state(ts->hw_res.pinctrl,
@@ -1813,12 +1774,11 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		if (IS_ERR_OR_NULL(ts->hw_res.pin_cs_low)) {
 			TP_INFO(ts->tp_index, " Failed to get the cs-gpio low state pinctrl \n");
 		}
-
 		ts->hw_res.pin_set_nopull = pinctrl_lookup_state(ts->hw_res.pinctrl,
 					    "pin_set_nopull");
 
 		if (IS_ERR_OR_NULL(ts->hw_res.pin_set_nopull)) {
-			TP_INFO(ts->tp_index, "Failed to get the input state pinctrl handle\n");
+			TPD_INFO("Failed to get the input state pinctrl handle\n");
 		}
 
 		/* active spi mode */
@@ -1881,14 +1841,14 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	ts->hw_res.enable_avdd_gpio = of_get_named_gpio(np, "enable2v8_gpio", 0);
 
 	if (ts->hw_res.enable_avdd_gpio < 0) {
-		TP_INFO(ts->tp_index, "ts->hw_res.enable2v8_gpio not specified\n");
+		TPD_INFO("ts->hw_res.enable2v8_gpio not specified\n");
 
 	} else {
 		if (gpio_is_valid(ts->hw_res.enable_avdd_gpio)) {
 			rc = devm_gpio_request(dev, ts->hw_res.enable_avdd_gpio, "vdd2v8-gpio");
 
 			if (rc) {
-				TP_INFO(ts->tp_index, "unable to request gpio [%d] %d\n", ts->hw_res.enable_avdd_gpio, rc);
+				TPD_INFO("unable to request gpio [%d] %d\n", ts->hw_res.enable_avdd_gpio, rc);
 			}
 		}
 	}
@@ -1896,14 +1856,14 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	ts->hw_res.enable_vddi_gpio = of_get_named_gpio(np, "enable1v8_gpio", 0);
 
 	if (ts->hw_res.enable_vddi_gpio < 0) {
-		TP_INFO(ts->tp_index, "ts->hw_res.enable1v8_gpio not specified\n");
+		TPD_INFO("ts->hw_res.enable1v8_gpio not specified\n");
 
 	} else {
 		if (gpio_is_valid(ts->hw_res.enable_vddi_gpio)) {
 			rc = devm_gpio_request(dev, ts->hw_res.enable_vddi_gpio, "vcc1v8-gpio");
 
 			if (rc) {
-				TP_INFO(ts->tp_index, "unable to request gpio [%d], %d\n", ts->hw_res.enable_vddi_gpio, rc);
+				TPD_INFO("unable to request gpio [%d], %d\n", ts->hw_res.enable_vddi_gpio, rc);
 			}
 		}
 	}
@@ -1913,7 +1873,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32(np, "touchpanel,int-mode", &val);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "int-mode not specified\n");
+		TPD_INFO("int-mode not specified\n");
 
 	} else {
 		if (val < INTERRUPT_MODE_MAX) {
@@ -1924,14 +1884,14 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32(np, "project_id", &ts->panel_data.project_id);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "project_id not specified\n");
+		TPD_INFO("project_id not specified\n");
 	}
 
 	rc = of_property_count_u32_elems(np, "platform_support_project");
 	ts->panel_data.project_num = rc;
 
 	if (!rc) {
-		TP_INFO(ts->tp_index, "project not specified\n");
+		TPD_INFO("project not specified\n");
 	}
 
 	if (ts->panel_data.project_num > 0) {
@@ -1939,7 +1899,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						ts->panel_data.platform_support_project, ts->panel_data.project_num);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "platform_support_project not specified");
+			TPD_INFO("platform_support_project not specified");
 			return -1;
 		}
 
@@ -1947,23 +1907,23 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						ts->panel_data.platform_support_project_dir, ts->panel_data.project_num);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "platform_support_project_dir not specified");
+			TPD_INFO("platform_support_project_dir not specified");
 			return -1;
 		}
 
 	} else {
-		TP_INFO(ts->tp_index, "project and project not specified in dts, please update dts");
+		TPD_INFO("project and project not specified in dts, please update dts");
 	}
 
 	/*parse chip name*/
 	rc = of_property_read_u32(np, "chip-num", &ts->panel_data.chip_num);
 
 	if (rc)  {
-		TP_INFO(ts->tp_index, "panel_type not specified, need to default 1");
+		TPD_INFO("panel_type not specified, need to default 1");
 		ts->panel_data.chip_num = 1;
 	}
 
-	TP_INFO(ts->tp_index, "find %d num chip in dts", ts->panel_data.chip_num);
+	TPD_INFO("find %d num chip in dts", ts->panel_data.chip_num);
 
 	for (i = 0; i < ts->panel_data.chip_num; i++) {
 		/*ts->panel_data.chip_name[i] = devm_kzalloc(dev, 100, GFP_KERNEL);
@@ -1976,10 +1936,10 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 
 		rc = of_property_read_string_index(np, "chip-name", i,
 						   (const char **)&ts->panel_data.chip_name[i]);
-		TP_INFO(ts->tp_index, "panel_data.chip_name = %s\n", ts->panel_data.chip_name[i]);
+		TPD_INFO("panel_data.chip_name = %s\n", ts->panel_data.chip_name[i]);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "chip-name not specified");
+			TPD_INFO("chip-name not specified");
 		}
 	}
 
@@ -1987,10 +1947,10 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_count_u32_elems(np, "panel_type");
 
 	if (!rc) {
-		TP_INFO(ts->tp_index, "panel_type not specified\n");
+		TPD_INFO("panel_type not specified\n");
 
 	} else if (rc) {
-		TP_INFO(ts->tp_index, "now has %d num panel in dts\n", rc);
+		TPD_INFO("now has %d num panel in dts\n", rc);
 		ts->panel_data.panel_num = rc;
 	}
 
@@ -1999,7 +1959,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						ts->panel_data.panel_num);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "panel_type not specified");
+			TPD_INFO("panel_type not specified");
 			goto dts_match_error;
 		}
 	}
@@ -2019,7 +1979,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						   (const char **)&ts->panel_data.platform_support_commandline[i]);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "platform_support_project_commandline not specified");
+			TPD_INFO("platform_support_project_commandline not specified");
 			goto dts_match_error;
 		}
 
@@ -2028,35 +1988,34 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						   (const char **)&ts->panel_data.firmware_name[i]);
 
 		if (rc) {
-			TP_INFO(ts->tp_index, "firmware_name not specified");
+			TPD_INFO("firmware_name not specified");
 			//devm_kfree(dev, ts->panel_data.firmware_name[i]);
 		}
 	}
 
 	rc = tp_judge_ic_match_commandline(&ts->panel_data);
 	snprintf(data_buf, 32, "firmware-data-%d", rc);
-	chip_index = rc;
 
 	if (rc < 0) {
-		TP_INFO(ts->tp_index, "commandline not match, please update dts");
+		TPD_INFO("commandline not match, please update dts");
 		goto dts_match_error;
 	}
 
 	rc = of_property_read_u32(np, "tp_type", &ts->panel_data.tp_type);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "tp_type not specified\n");
+		TPD_INFO("tp_type not specified\n");
 	}
 
 	/*firmware*/
-	TP_INFO(ts->tp_index, "read %s firmware in dts", data_buf);
+	TPD_INFO("read %s firmware in dts", data_buf);
 	size = of_property_count_u8_elems(np, data_buf);
 
 	if (size <= 0) {
-		TP_INFO(ts->tp_index, "No firmware in dts !\n");
+		TPD_INFO("No firmware in dts !\n");
 
 	} else {
-		TP_INFO(ts->tp_index, "The firmware len id %d!\n", size);
+		TPD_INFO("The firmware len id %d!\n", size);
 		ts->firmware_in_dts = kzalloc(sizeof(struct firmware), GFP_KERNEL);
 
 		if (ts->firmware_in_dts != NULL) {
@@ -2072,7 +2031,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 							       size);
 
 				if (rc) {
-					TP_INFO(ts->tp_index, "Can not get the firmware in dts!\n");
+					TPD_INFO("Can not get the firmware in dts!\n");
 					kfree(ts->firmware_in_dts->data);
 					ts->firmware_in_dts->data = NULL;
 					kfree(ts->firmware_in_dts);
@@ -2093,14 +2052,14 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32(np, "touchpanel,max-num-support", &ts->max_num);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "ts->max_num not specified\n");
+		TPD_INFO("ts->max_num not specified\n");
 		ts->max_num = 10;
 	}
 
 	rc = of_property_read_u32_array(np, "touchpanel,tx-rx-num", tx_rx_num, 2);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "tx-rx-num not set\n");
+		TPD_INFO("tx-rx-num not set\n");
 		ts->hw_res.tx_num = 0;
 		ts->hw_res.rx_num = 0;
 
@@ -2109,12 +2068,28 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		ts->hw_res.rx_num = tx_rx_num[1];
 	}
 
-	TP_INFO(ts->tp_index, "tx_num = %d, rx_num = %d \n", ts->hw_res.tx_num, ts->hw_res.rx_num);
+	TPD_INFO("tx_num = %d, rx_num = %d \n", ts->hw_res.tx_num, ts->hw_res.rx_num);
+
+	if (ts->pen_support) {
+	    rc = of_property_read_u32_array(np, "touchpanel,pen-tx-rx-num", tx_rx_num, 2);
+
+	    if (rc) {
+	        TPD_INFO("pen-tx-rx-num not set\n");
+	        ts->hw_res.pen_tx_num = 0;
+	        ts->hw_res.pen_rx_num = 0;
+
+	    } else {
+	        ts->hw_res.pen_tx_num = tx_rx_num[0];
+	        ts->hw_res.pen_rx_num = tx_rx_num[1];
+	    }
+
+	    TPD_INFO("pen_tx_num = %d, pen_rx_num = %d \n", ts->hw_res.pen_tx_num, ts->hw_res.pen_rx_num);
+	}
 
 	rc = of_property_read_u32_array(np, "touchpanel,display-coords", temp_array, 2);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "Lcd size not set\n");
+		TPD_INFO("Lcd size not set\n");
 		ts->resolution_info.LCD_WIDTH = 0;
 		ts->resolution_info.LCD_HEIGHT = 0;
 
@@ -2146,7 +2121,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		ts->touch_major_limit.height_range = temp_array[1];
 	}
 
-	TP_INFO(ts->tp_index, "LCD_WIDTH = %d, LCD_HEIGHT = %d, max_x = %d, max_y = %d, limit_witdh = %d, limit_height = %d\n",
+	TPD_INFO("LCD_WIDTH = %d, LCD_HEIGHT = %d, max_x = %d, max_y = %d, limit_witdh = %d, limit_height = %d\n",
 		 ts->resolution_info.LCD_WIDTH, ts->resolution_info.LCD_HEIGHT,
 		 ts->resolution_info.max_x, ts->resolution_info.max_y, \
 		 ts->touch_major_limit.width_range, ts->touch_major_limit.height_range);
@@ -2155,7 +2130,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32_array(np, "touchpanel,button-type", temp_array, 2);
 
 	if (rc < 0) {
-		TP_INFO(ts->tp_index, "error:button-type should be setting in dts!");
+		TPD_INFO("error:button-type should be setting in dts!");
 
 	} else {
 		ts->vk_type = temp_array[0];
@@ -2165,7 +2140,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 			rc = of_property_read_u32_array(np, "touchpanel,button-map", temp_array, 8);
 
 			if (rc) {
-				TP_INFO(ts->tp_index, "button-map not set\n");
+				TPD_INFO("button-map not set\n");
 
 			} else {
 				ts->button_map.coord_menu.x = temp_array[0];
@@ -2184,18 +2159,18 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32_array(np, "touchpanel.button-TRx", temp_array, 2);
 
 	if (rc < 0) {
-		TP_INFO(ts->tp_index, "error:button-TRx should be setting in dts!\n");
+		TPD_INFO("error:button-TRx should be setting in dts!\n");
 		ts->hw_res.key_tx = 0;
 		ts->hw_res.key_rx = 0;
 
 	} else {
 		ts->hw_res.key_tx = temp_array[0];
 		ts->hw_res.key_rx = temp_array[1];
-		TP_INFO(ts->tp_index, "key_tx is %d, key_rx is %d\n", ts->hw_res.key_tx, ts->hw_res.key_rx);
+		TPD_INFO("key_tx is %d, key_rx is %d\n", ts->hw_res.key_tx, ts->hw_res.key_rx);
 	}
 	rc = of_property_read_u32_array(np, "touchpanel,smooth-level", temp_array, SMOOTH_LEVEL_NUM);
 	if (rc) {
-		TP_INFO(ts->tp_index, "smooth_level_array not specified %d\n", rc);
+		TPD_INFO("smooth_level_array not specified %d\n", rc);
 	} else {
 		ts->smooth_level_array_support = true;
 		for (i=0; i < SMOOTH_LEVEL_NUM; i++) {
@@ -2207,7 +2182,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						temp_array,
 						SMOOTH_LEVEL_NUM);
 		if (rc) {
-			TP_INFO(ts->tp_index, "smooth_level_charging_array not specified %d\n", rc);
+			TPD_INFO("smooth_level_charging_array not specified %d\n", rc);
 			for (i=0; i < SMOOTH_LEVEL_NUM; i++) {
 				ts->smooth_level_charging_array[i] = ts->smooth_level_array[i];
 			}
@@ -2221,7 +2196,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 
 	rc = of_property_read_u32_array(np, "touchpanel,sensitive-level", temp_array, SENSITIVE_LEVEL_NUM);
 	if (rc) {
-		TP_INFO(ts->tp_index, "sensitive_level_array not specified %d\n", rc);
+		TPD_INFO("sensitive_level_array not specified %d\n", rc);
 	} else {
 		ts->sensitive_level_array_support = true;
 		for (i=0; i < SENSITIVE_LEVEL_NUM; i++) {
@@ -2233,7 +2208,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 						temp_array,
 						SENSITIVE_LEVEL_NUM);
 		if (rc) {
-			TP_INFO(ts->tp_index, "sensitive_charging_array not specified %d\n", rc);
+			TPD_INFO("sensitive_charging_array not specified %d\n", rc);
 			for (i=0; i < SENSITIVE_LEVEL_NUM; i++) {
 				ts->sensitive_level_charging_array[i] = ts->sensitive_level_array[i];
 			}
@@ -2245,29 +2220,18 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 		ts->sensitive_level_used_array = (u32 *)&(ts->sensitive_level_array);
 	}
 
-	rc = of_property_read_u32_array(np, "touchpanel,game_perf_para_default", temp_array, 2);
-
-	if (rc < 0) {
-		TP_INFO(ts->tp_index, "error:game_perf_para_default should be setting in dts!\n");
-		ts->sensitive_level_default = 0;
-		ts->smooth_level_default = 0;
-
-	} else {
-		ts->sensitive_level_default = temp_array[0];
-		ts->smooth_level_default = temp_array[1];
-		TP_INFO(ts->tp_index, "sensitive_level_default is %d, smooth_level_default is %d\n",
-			ts->sensitive_level_default, ts->smooth_level_default);
-	}
+	/*set disable suspend irq handler parameter, for of_property_read_bool return 1 when success and return 0 when item is not exist*/
+	ts->disable_suspend_irq_handler = of_property_read_bool(np, "disable_suspend_irq_handler_support");
 
 	/*set incell panel parameter, for of_property_read_bool return 1 when success and return 0 when item is not exist*/
-	rc = ts->is_incell_panel = of_property_read_bool(np, "incell_screen");
-
+	ts->is_incell_panel = of_property_read_bool(np, "incell_screen");
+	rc = ts->is_incell_panel;
 	if (rc > 0) {
-		TP_INFO(ts->tp_index, "panel is incell!\n");
+		TPD_INFO("panel is incell!\n");
 		ts->is_incell_panel = 1;
 
 	} else {
-		TP_INFO(ts->tp_index, "panel is oncell!\n");
+		TPD_INFO("panel is oncell!\n");
 		ts->is_incell_panel = 0;
 	}
 
@@ -2275,7 +2239,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 	rc = of_property_read_u32(np, "touchpanel,tp_ic_type", &val);
 
 	if (rc) {
-		TP_INFO(ts->tp_index, "tp_ic_type not specified\n");
+		TPD_INFO("tp_ic_type not specified\n");
 
 	} else {
 		if (val < TYPE_IC_MAX) {
@@ -2285,7 +2249,7 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 
 	rc = of_property_read_u32(np, "touchpanel,single-optimized-time", &ts->single_optimized_time);
 	if (rc) {
-		TP_INFO(ts->tp_index, "ts->single_optimized_time not specified\n");
+		TPD_INFO("ts->single_optimized_time not specified\n");
 		ts->single_optimized_time = 0;
 		ts->optimized_show_support = false;
 	} else {
@@ -2295,15 +2259,47 @@ static int init_parse_dts(struct device *dev, struct touchpanel_data *ts)
 
 	rc = of_property_read_u32(np, "touchpanel,high-frame-rate-time", &ts->high_frame_rate_time);
 	if (rc) {
-			TP_INFO(ts->tp_index, "ts->high_frame_rate_time not specified or support\n");
-			ts->high_frame_rate_time = 0;
-			ts->high_frame_rate_support = false;
+		TP_INFO(ts->tp_index, "ts->high_frame_rate_time not specified or support\n");
+		ts->high_frame_rate_time = 0;
+		ts->high_frame_rate_support = false;
 	} else {
-			ts->high_frame_rate_support = true;
+		ts->high_frame_rate_support = true;
 	}
 
-	init_panel_config(dev, ts);
+	/* panel default orientation*/
+	rc = of_property_read_u32(np, "touchpanel,panel-orientation", &ts->orientation);
+	if (rc) {
+		TPD_INFO("touchpanel,panel-orientation not specified\n");
+		ts->orientation = 0;
+	} else {
+		TPD_INFO("touchpanel,panel-orientation:%d\n", ts->orientation);
+	}
 
+	rc = of_property_read_u32(np, "report_rate_limit", &ts->panel_data.report_rate_limit);
+	if (rc) {
+		TPD_INFO("report_rate_limit not specified,we will set it 60hz\n");
+		ts->monitor_data.rate_min = 60;
+	} else {
+		ts->monitor_data.rate_min = ts->panel_data.report_rate_limit;
+	}
+
+	/* tp_index*/
+	rc = of_property_read_u32(np, "touchpanel,tp-index", &ts->tp_index);
+
+	if (rc) {
+		TPD_INFO("ts->tp_index not specified\n");
+		ts->tp_index = 0;
+
+	} else {
+		if (ts->tp_index >= TP_SUPPORT_MAX) {
+			TPD_INFO("ts->tp_index is big than %d\n", TP_SUPPORT_MAX);
+			ts->tp_index = 0;
+			ret = -1;
+		}
+	}
+
+	cur_tp_index = ts->tp_index;
+	TPD_INFO("ts->tp_index is %d\n",  cur_tp_index);
 	return ret;
 
 dts_match_error:
@@ -2473,8 +2469,8 @@ int tp_powercontrol_vddi(struct hw_resource *hw_res, bool on)
 
 	} else { /* 1v8 power off*/
 		if (!IS_ERR_OR_NULL(hw_res->vddi)) {
-			TPD_INFO("disable the vddi_gpio\n");
 			ret = regulator_disable(hw_res->vddi);
+
 			if (ret) {
 				TPD_INFO("Regulator vcc_i2c enable failed rc = %d\n", ret);
 				return ret;
@@ -2552,6 +2548,7 @@ EXPORT_SYMBOL(tp_powercontrol_avdd);
 static void esd_handle_func(struct work_struct *work)
 {
 	int ret = 0;
+	int gpio_en, regulator_en, regulator_vol = 0;
 	struct touchpanel_data *ts = container_of(work, struct touchpanel_data,
 				     esd_info.esd_check_work.work);
 
@@ -2581,7 +2578,55 @@ static void esd_handle_func(struct work_struct *work)
 
 	if (ret ==
 	    -1) {    /*-1 means esd hanppened: handled in IC part, recovery the state here*/
+		tp_healthinfo_report(&ts->monitor_data, HEALTH_REPORT, "esd_happened");
 		operate_mode_switch(ts);
+		if (ts->exception_upload_support) {
+			tp_exception_report(&ts->exception_data, EXCEP_HARDWARE, "esd_handle_failed", sizeof("esd_handle_failed"));
+		}
+	}
+
+	if (!IS_ERR_OR_NULL(ts->hw_res.avdd) && (regulator_get_voltage(ts->hw_res.avdd) != -EINVAL)) {
+		regulator_en = regulator_is_enabled(ts->hw_res.avdd);
+		regulator_vol = regulator_get_voltage(ts->hw_res.avdd);
+		if (!regulator_en || regulator_vol < AVDD_VOLTAGE_LIMIT_MIN || regulator_vol > AVDD_VOLTAGE_LIMIT_MAX) {
+			TP_INFO(ts->tp_index, "avdd regulator enabled=%d, voltage=%d\n", regulator_en, regulator_vol);
+			regulator_vol = regulator_en ? regulator_vol : VOLTAGE_STATE_REGULATOR_DISABLED;
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_AVDD, &regulator_vol);
+		}
+	}
+	if (ts->hw_res.enable_avdd_gpio > 0) {
+		gpio_en = gpio_get_value(ts->hw_res.enable_avdd_gpio);
+		if (!gpio_en) {
+			TPD_INFO("avdd gpio is %d\n", gpio_en);
+			regulator_vol = VOLTAGE_STATE_ENABLE_GPIO_LOW;
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_AVDD, &regulator_vol);
+		}
+	}
+
+	if (!IS_ERR_OR_NULL(ts->hw_res.vddi) && (regulator_get_voltage(ts->hw_res.vddi) != -EINVAL)) {
+		regulator_en = regulator_is_enabled(ts->hw_res.vddi);
+		regulator_vol = regulator_get_voltage(ts->hw_res.vddi);
+		if (!regulator_en || regulator_vol < VDDI_VOLTAGE_LIMIT_MIN || regulator_vol > VDDI_VOLTAGE_LIMIT_MAX) {
+			TP_INFO(ts->tp_index, "vddi regulator enabled=%d, voltage=%d\n", regulator_en, regulator_vol);
+			regulator_vol = regulator_en ? regulator_vol : VOLTAGE_STATE_REGULATOR_DISABLED;
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_VDDI, &regulator_vol);
+		}
+	}
+	if (ts->hw_res.enable_vddi_gpio > 0) {
+		gpio_en = gpio_get_value(ts->hw_res.enable_vddi_gpio);
+		if (!gpio_en) {
+			TPD_INFO("vddi gpio is %d\n", gpio_en);
+			regulator_vol = VOLTAGE_STATE_ENABLE_GPIO_LOW;
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_VDDI, &regulator_vol);
+		}
+	}
+
+	if (ts->up_status && gpio_is_valid(ts->hw_res.irq_gpio)) {
+		gpio_en = gpio_get_value(ts->hw_res.irq_gpio);
+		if (!gpio_en) {
+			TPD_INFO("irq gpio is %d\n", gpio_en);
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_REPORT, "touch_up_irq_low");
+		}
 	}
 
 	if (ts->esd_info.esd_running_flag) {
@@ -2630,6 +2675,40 @@ void esd_handle_switch(struct esd_information *esd_info, bool on)
 }
 EXPORT_SYMBOL(esd_handle_switch);
 
+static void tp_rate_calc(struct touchpanel_data *ts, tp_rate tp_rate_type)
+{
+	switch(tp_rate_type) {
+	case TP_RATE_START:
+		ts->curr_time = ktime_to_ms(ktime_get());
+		break;
+	case TP_RATE_CLEAR:
+		ts->irq_num = 0;
+		break;
+	case TP_RATE_CALC:
+		if (ts->irq_interval == 0) {
+			ts->irq_interval = ts->curr_time;
+		}
+		ts->irq_interval = ts->curr_time - ts->irq_interval;
+		ts->irq_handle_time = ktime_to_ms(ktime_get()) - ts->curr_time;
+		if(ts->irq_num > 0 && ts->monitor_data.in_game_mode && ts->irq_num % 10 == 0) {
+			TPD_INFO("rate = %d,ts->irq_handle_time =%d,curr_time = %d\n", 1000/ts->irq_interval, ts->irq_handle_time, ts->curr_time);
+		} else {
+			if (ts->irq_num > 0 && ts->irq_num % 100 == 0) {
+				TPD_INFO("rate = %d,ts->irq_handle_time =%d,curr_time = %d\n", 1000/ts->irq_interval, ts->irq_handle_time, ts->curr_time);
+			}
+		}
+
+		if (ts->irq_num > 0 && 1000/ts->irq_interval < ts->monitor_data.rate_min && ts->health_monitor_support) {
+			tp_healthinfo_report(&ts->monitor_data, HEALTH_BELOW_RATE, (void *)&ts->irq_num);
+		}
+		ts->irq_interval = ts->curr_time;
+		ts->irq_num++;
+		break;
+	default:
+		break;
+	}
+}
+
 static int tp_register_irq_func(struct touchpanel_data *ts)
 {
 	int ret = 0;
@@ -2666,58 +2745,6 @@ static int tp_register_irq_func(struct touchpanel_data *ts)
 
 	return ret;
 }
-
-void tp_delta_read_triggered_by_key(int index)
-{
-	if (tp_debug != 2)
-		return;
-
-	if (!g_tp[index])
-		return;
-	if (!g_tp[index]->key_trigger_wq)
-		return;
-
-	queue_work(g_tp[index]->key_trigger_wq, &g_tp[index]->key_trigger_work);
-}
-EXPORT_SYMBOL(tp_delta_read_triggered_by_key);
-
-static void tp_delta_read_triggered_by_key_handle(struct work_struct *work)
-{
-	struct debug_info_proc_operations *debug_info_ops;
-	struct touchpanel_data *ts = container_of(work, struct touchpanel_data,
-				key_trigger_work);
-
-	TPD_INFO("%s:tp_debug= %d\n", __func__, tp_debug);
-
-	if (tp_debug != 2)
-		return;
-
-	if (!ts)
-		return;
-
-	debug_info_ops = (struct debug_info_proc_operations *)ts->debug_info_ops;
-
-	if (!debug_info_ops)
-		return;
-	if (!debug_info_ops->key_trigger_delta_read) {
-		return;
-	}
-	if (!debug_info_ops->delta_read) {
-		return;
-	}
-
-	if (ts->int_mode == BANNABLE) {
-		disable_irq_nosync(ts->irq);
-	}
-	mutex_lock(&ts->mutex);
-	debug_info_ops->key_trigger_delta_read(ts->chip_data);
-	mutex_unlock(&ts->mutex);
-	if (ts->int_mode == BANNABLE) {
-		enable_irq(ts->irq);
-	}
-	return;
-}
-
 
 static int tp_paneldata_init(struct touchpanel_data *pdata)
 {
@@ -2837,9 +2864,26 @@ static int init_get_adc_channels(struct touchpanel_data *ts)
 			pr_err("%s channel unavailable, %d\n", name, rc);
 		ts->skin_therm_chan = NULL;
 	}
-	TP_INFO(ts->tp_index, "%s finished\n", __func__);
+	TPD_INFO("%s finished\n", __func__);
 	return rc;
 }
+
+static int pre_get_shellback(struct touchpanel_data *ts)
+{
+	int ret = 0;
+	ts->oplus_shell_themal = thermal_zone_get_zone_by_name("shell_back");
+
+	if (IS_ERR(ts->oplus_shell_themal)) {
+		TPD_INFO("%s Can't get shell_back\n", __func__);
+		ts->oplus_shell_themal = NULL;
+		ret = -1;
+	}
+
+	TPD_DEBUG("%s get shell_back ret:%d\n", __func__, ret);
+
+	return ret;
+}
+
 static void tp_get_temperature_work(struct work_struct *work)
 {
 	struct touchpanel_data *ts = container_of(work, struct touchpanel_data,
@@ -2848,16 +2892,35 @@ static void tp_get_temperature_work(struct work_struct *work)
 	int rc;
 	static int last_temp;
 
-	if (!ts->skin_therm_chan)
+#ifdef CONFIG_TOUCHPANEL_TRUSTED_TOUCH
+	if (atomic_read(&ts->trusted_touch_enabled) == 1) {
+		TPD_INFO("%s: Trusted touch is already enabled, do not get temp\n", __func__);
 		return;
-	rc = iio_read_channel_processed(ts->skin_therm_chan, &result);
-	if (rc < 0)
-		pr_err("can't get skin temp, rc=%d\n", rc);
+	}
+#endif
+
+	if (ts->temperature_detect_shellback_support) {
+		rc = pre_get_shellback(ts);
+		if (rc < 0) {
+			TPD_INFO("%s can't pre_get_shellback\n", __func__);
+			goto End;
+		}
+		rc = thermal_zone_get_temp(ts->oplus_shell_themal, &result);
+		if (rc < 0)
+			TPD_INFO("%s can't thermal_zone_get_temp, rc=%d\n", __func__, rc);
+	} else {
+		if (!ts->skin_therm_chan)
+			return;
+		rc = iio_read_channel_processed(ts->skin_therm_chan, &result);
+		if (rc < 0)
+			TPD_INFO("%s can't skin_therm_chan, rc=%d\n", __func__, rc);
+	}
+
 	result = result / 1000;
 	TPD_DEBUG("temp is %d\n", result);
 	if (last_temp == result)
 		goto End;
-	if (ts->is_suspended == 0 && ts->temperature_detect_support) {
+	if (ts->is_suspended == 0 && (ts->temperature_detect_support || ts->temperature_detect_shellback_support)) {
 		mutex_lock(&ts->mutex);
 		ts->ts_ops->send_temperature(ts->chip_data, result, true);
 		mutex_unlock(&ts->mutex);
@@ -2875,7 +2938,7 @@ static enum hrtimer_restart ts_get_temperature_timeout(struct hrtimer *timer)
 	return HRTIMER_NORESTART;
 }
 
-#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY) || IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
+#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
 static int ts_check_panel_dt(struct device *dev, struct touchpanel_data *ts)
 {
 	int i;
@@ -2883,36 +2946,15 @@ static int ts_check_panel_dt(struct device *dev, struct touchpanel_data *ts)
 	struct device_node *node = NULL;
 	struct drm_panel *panel = NULL;
 	struct device_node *np = NULL;
-	char disp_node[32] = {0};
+	np = dev->of_node;
 
-	np = of_find_node_by_name(NULL, "oplus,dsi-display-dev");
-	if (!np) {
-		TP_INFO(ts->tp_index, "%s: [oplus,dsi-display-dev] is missing, try to find [panel] node \n", __func__);
-		np = dev->of_node;
-		strncpy(disp_node, "panel", sizeof("panel"));
-	} else {
-		TP_INFO(ts->tp_index, "%s: [oplus,dsi-display-dev] node found \n", __func__);
-		if (ts->tp_index == 0) {
-			strncpy(disp_node, "oplus,dsi-panel-primary", sizeof("oplus,dsi-panel-primary"));
-		} else if (ts->tp_index == 1) {
-			strncpy(disp_node, "oplus,dsi-panel-secondary", sizeof("oplus,dsi-panel-secondary"));
-		} else {
-			TP_INFO(ts->tp_index, "%s: This branch will never be called now \n", __func__);
-		}
-		TP_INFO(ts->tp_index, "%s: disp_node = %s \n", __func__, disp_node);
-	}
-
-	count = of_count_phandle_with_args(np, disp_node, NULL);
-	if (count <= 0) {
-		TP_INFO(ts->tp_index, "%s: can not find [%s] node in dts \n", __func__, disp_node);
+	count = of_count_phandle_with_args(np, "panel", NULL);
+	if (count <= 0)
 		return 0;
-	}
 
 	for (i = 0; i < count; i++) {
-		node = of_parse_phandle(np, disp_node, i);
+		node = of_parse_phandle(np, "panel", i);
 		panel = of_drm_find_panel(node);
-
-		TP_INFO(ts->tp_index, "%s: panel[%d] IS_ERR =%d \n", __func__, i, IS_ERR(panel));
 		of_node_put(node);
 		if (!IS_ERR(panel)) {
 			ts->active_panel = panel;
@@ -2935,14 +2977,10 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 {
 	struct touchpanel_data *ts = pdata;
 	char name[TP_NAME_SIZE_MAX];
-	struct device_node *chip_np = NULL;
-	struct device_node *src_chip_np = NULL;
-	int ret = -1;
-#if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-	void *cookie = NULL;
-#endif
 
-	TPD_INFO("%s  is called\n", __func__);
+	int ret = -1;
+
+	TPD_INFO("%s  is gqc called\n", __func__);
 
 	if (!ts->dev) {
 		return -1;
@@ -2956,7 +2994,7 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		return -1;
 	}
 
-#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY) || IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
+#if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
 	ret = ts_check_panel_dt(ts->dev, ts);
 	if (ret < 0) {
 		TP_INFO(ts->tp_index, "%s: ts_check_panel_dt failed.\n", __func__);
@@ -2970,7 +3008,7 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		ret = tp_healthinfo_init(ts->dev, &ts->monitor_data);
 
 		if (ret < 0) {
-			TP_INFO(ts->tp_index, "health info init failed.\n");
+			TPD_INFO("health info init failed.\n");
 		}
 
 		ts->monitor_data.health_monitor_support = true;
@@ -2978,13 +3016,19 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		ts->monitor_data.debug_info_ops = ts->debug_info_ops;
 	}
 
+	if (ts->exception_upload_support) {
+		ts->exception_data.exception_upload_support = true;
+		ts->exception_data.chip_data = ts->chip_data;
+	}
+
 	/*step3 : interfaces init*/
 	init_touch_interfaces(ts->dev, ts->register_is_16bit);
-	// lcd_tp_refresh_support support
-	if (ts->lcd_tp_refresh_support) {
+
+	/* lcd_tp_refresh_support support */
+		if (ts->lcd_tp_refresh_support) {
 		ts->tp_refresh_wq = create_singlethread_workqueue("tp_refresh_wq");
 		if (!ts->tp_refresh_wq) {
-		return -1;
+			return -1;
 		}
 		INIT_WORK(&ts->tp_refresh_work, lcd_tp_refresh_work);
 	}
@@ -2999,9 +3043,6 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 	/*wake_lock_init(&ts->wakelock, WAKE_LOCK_SUSPEND, "tp_wakelock");*/
 	/*step5 : power init*/
 	ret = tp_power_init(ts);
-	if (ret < 0) {
-		return ret;
-	}
 
 	ret = oplus_gpio_resume(ts);
 	if (ret < 0) {
@@ -3010,11 +3051,11 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 
 	/*step6 : I2C function check*/
 	if ((!ts->is_noflash_ic) && (ts->bus_type == TP_BUS_I2C)) {
-			if (!i2c_check_functionality(ts->client->adapter, I2C_FUNC_I2C)) {
-				TP_INFO(ts->tp_index, "%s: need I2C_FUNC_I2C\n", __func__);
-				ret = -ENODEV;
-				goto err_check_functionality_failed;
-			}
+		if (!i2c_check_functionality(ts->client->adapter, I2C_FUNC_I2C)) {
+			TP_INFO(ts->tp_index, "%s: need I2C_FUNC_I2C\n", __func__);
+			ret = -ENODEV;
+			goto err_check_functionality_failed;
+		}
 	}
 
 	/*step7 : touch input dev init*/
@@ -3046,6 +3087,9 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 
 	/*step10 : FTM process*/
 	ts->boot_mode = get_boot_mode();
+	tp_cs_gpio_notifier = tp_control_cs_gpio;
+	tp_reset_gpio_notifier = tp_control_reset_gpio;
+	tp_ftm_extra_notifier = tp_ftm_extra;
 
 	if (is_ftm_boot_mode(ts)) {
 		ts->ts_ops->ftm_process(ts->chip_data);
@@ -3102,12 +3146,12 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		goto err_check_functionality_failed;
 	}
 
-	ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_NORMAL, true);
+	ret = mode_switch_health(ts, MODE_NORMAL, true);
 
 	if (ret < 0) {
 		ret = -EINVAL;
 		TP_INFO(ts->tp_index, "%s:modem switch failed!\n", __func__);
-		goto err_check_functionality_failed;
+		/*goto err_check_functionality_failed;*/   /*mode swith fail don't goto end, still keep going upgrade*/
 	}
 
 	/*step14 : irq request setting*/
@@ -3120,33 +3164,12 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 	}
 
 	/*step15 : suspend && resume fuction register*/
-
 #if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
 	ts->fb_notif.notifier_call = fb_notifier_callback;
 
 	if (ts->active_panel)
 		ret = drm_panel_notifier_register(ts->active_panel,
 			&ts->fb_notif);
-#elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-	if (ts->active_panel) {
-		cookie = panel_event_notifier_register(PANEL_EVENT_NOTIFICATION_PRIMARY,
-				PANEL_EVENT_NOTIFIER_CLIENT_PRIMARY_TOUCH, ts->active_panel,
-				&ts_panel_notifier_callback, ts);
-
-		if (!cookie) {
-			TP_INFO(ts->tp_index, "Unable to register fb_notifier: %d\n", ret);
-			goto err_check_functionality_failed;
-		}
-		ts->notifier_cookie = cookie;
-	}
-
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-	ts->disp_notifier.notifier_call = ts_mtk_drm_notifier_callback;
-	if (mtk_disp_notifier_register("Oplus_touch_v2", &ts->disp_notifier)) {
-		TP_INFO(ts->tp_index, "Failed to register disp notifier client!!\n");
-		goto err_check_functionality_failed;
-	}
-
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 	ts->fb_notif.notifier_call = fb_notifier_callback;
 	ret = msm_drm_register_client(&ts->fb_notif);
@@ -3203,17 +3226,6 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 	INIT_WORK(&ts->speed_up_work, speedup_resume);
 	INIT_WORK(&ts->fw_update_work, tp_fw_update_work);
 
-	/*create workqueue for key trigger */
-	snprintf(name, TP_NAME_SIZE_MAX, "volume_key_trigger%d", ts->tp_index);
-	ts->key_trigger_wq = create_singlethread_workqueue(name);
-
-	if (!ts->key_trigger_wq) {
-		ret = -ENOMEM;
-		goto error_charger_pump;
-	}
-
-	INIT_WORK(&ts->key_trigger_work, tp_delta_read_triggered_by_key_handle);
-
 	/*step 17:incell lcd trigger load tp fw  support*/
 	if (ts->lcd_trigger_load_tp_fw_support) {
 		snprintf(name, TP_NAME_SIZE_MAX, "lcd_trigger_load_tp_fw_wq%d", ts->tp_index);
@@ -3265,23 +3277,25 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 		ts->freq_hop_info.freq_hop_freq = 0;
 	}
 
-	chip_np = is_support_child_node(ts->dev, ts);
+	/*initial kernel grip parameter*/
+	if (ts->kernel_grip_support) {
+		ts->grip_info = kernel_grip_init(ts->dev);
 
-	if (!chip_np) {
-		TP_INFO(ts->tp_index, "chip_np not defined.\n");
-	} else {
-		src_chip_np = ts->dev->of_node;
-		ts->dev->of_node = chip_np;
-		ts->dev->of_node = src_chip_np;
+		if (!ts->grip_info) {
+			TP_INFO(ts->tp_index, "kernel grip init failed.\n");
+		}
 	}
 
 	/*step 22 : createproc proc files interface*/
 	init_touchpanel_proc(ts);
-	init_touch_misc_device(ts);
-	if (ts->temperature_detect_support) {
-		ret = init_get_adc_channels(ts);
+	if (ts->temperature_detect_support || ts->temperature_detect_shellback_support) {
+		if (ts->temperature_detect_shellback_support) {
+			ret = 0;
+		} else {
+			ret = init_get_adc_channels(ts);
+		}
 		if (ret < 0)
-			TP_INFO(ts->tp_index, "init get channels failed\n");
+			TPD_INFO("init get channels failed\n");
 		else {
 			hrtimer_init(&ts->temp_timer, CLOCK_MONOTONIC, HRTIMER_MODE_REL);
 			ts->temp_timer.function = ts_get_temperature_timeout;
@@ -3294,7 +3308,7 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(4, 9, 0))
 	ts->ws = wakeup_source_register(dev_name(ts->dev));
 #else
-        ts->ws = wakeup_source_register(ts->dev,dev_name(ts->dev));
+        ts->ws = wakeup_source_register(ts->dev, dev_name(ts->dev));
 #endif
 	if (ts->fw_edge_limit_support) {
 		ts->limit_enable = 1;
@@ -3320,11 +3334,10 @@ int register_common_touch_device(struct touchpanel_data *pdata)
 
 	if (ts->is_noflash_ic || ts->bus_type == TP_BUS_SPI) {
 		ts->irq = ts->s_client->irq;
-	}
-	else {
+
+	} else {
 		ts->irq = ts->client->irq;
 	}
-
 
 	mutex_lock(&tp_core_lock);
 	g_tp[ts->tp_index] = ts;
@@ -3366,7 +3379,6 @@ error_headset_pump:
 	}
 
 error_fb_notif:
-
 #if IS_ENABLED(CONFIG_DRM_OPLUS_PANEL_NOTIFY)
 	if (ts->active_panel) {
 		ret = drm_panel_notifier_unregister(ts->active_panel,
@@ -3375,12 +3387,6 @@ error_fb_notif:
 			TP_INFO(ts->tp_index, "Unable to unregister fb_notifier: %d\n", ret);
 		}
 	}
-#elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-	if (ts->active_panel && ts->notifier_cookie) {
-		panel_event_notifier_unregister(ts->notifier_cookie);
-	}
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-	mtk_disp_notifier_unregister(&ts->disp_notifier);
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 	msm_drm_unregister_client(&ts->fb_notif);
 #elif IS_ENABLED(CONFIG_FB)
@@ -3393,6 +3399,9 @@ err_check_functionality_failed:
 		gpio_free(ts->hw_res.cs_gpio);
 	}
 
+	if (ts->exception_upload_support) {
+		tp_exception_report(&ts->exception_data, EXCEP_PROBE, "register_common_touch_device", sizeof("register_common_touch_device"));
+	}
 	/*wake_lock_destroy(&ts->wakelock);*/
 	ret = -1;
 	return ret;
@@ -3470,14 +3479,6 @@ void unregister_common_touch_device(struct touchpanel_data *pdata)
 			TP_INFO(ts->tp_index, "Unable to unregister fb_notifier: %d\n", ret);
 		}
 	}
-#elif IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-	if (ts->active_panel && ts->notifier_cookie) {
-		panel_event_notifier_unregister(ts->notifier_cookie);
-	}
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-	if (ts->disp_notifier.notifier_call) {
-		mtk_disp_notifier_unregister(&ts->disp_notifier);
-	}
 #elif IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
 
 	if (ts->fb_notif.notifier_call) {
@@ -3510,7 +3511,6 @@ void unregister_common_touch_device(struct touchpanel_data *pdata)
 		regulator_put(ts->hw_res.vddi);
 		ts->hw_res.vddi = NULL;
 	}
-
 	/*free wakeup source*/
 	if (ts->ws) {
 		wakeup_source_unregister(ts->ws);
@@ -3531,6 +3531,9 @@ EXPORT_SYMBOL(common_touch_data_alloc);
 int common_touch_data_free(struct touchpanel_data *pdata)
 {
 	if (pdata) {
+		if (g_tp[pdata->tp_index]) {
+			g_tp[pdata->tp_index] = NULL;
+		}
 		kfree(pdata);
 	}
 
@@ -3588,7 +3591,7 @@ static int tp_suspend(struct device *dev)
 		TP_INFO(ts->tp_index, "%s: do not suspend twice.\n", __func__);
 		goto EXIT;
 	}
-	if (ts->temperature_detect_support && ts->skin_therm_chan)
+	if ((ts->temperature_detect_support || ts->temperature_detect_shellback_support) && ts->skin_therm_chan)
 		hrtimer_cancel(&ts->temp_timer);
 
 	/*step3:Release key && touch event before suspend*/
@@ -3606,7 +3609,7 @@ static int tp_suspend(struct device *dev)
 				     && ts->gesture_enable > 0)) {
 		/*step5:gamde mode support*/
 		if (ts->game_switch_support) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_GAME, false);
+			mode_switch_health(ts, MODE_GAME, false);
 		}
 
 		if (ts->report_rate_white_list_support && ts->ts_ops->rate_white_list_ctrl) {
@@ -3614,7 +3617,7 @@ static int tp_suspend(struct device *dev)
 		}
 
 		if (ts->face_detect_support && ts->fd_enable) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_FACE_DETECT, false);
+			mode_switch_health(ts, MODE_FACE_DETECT, false);
 		}
 	}
 
@@ -3629,7 +3632,7 @@ static int tp_suspend(struct device *dev)
 	/*step7:gesture mode status process*/
 	if (ts->black_gesture_support) {
 		if ((CHK_BIT(ts->gesture_enable, 0x01)) == 1) {
-			ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, ts->gesture_enable);
+			mode_switch_health(ts, MODE_GESTURE, ts->gesture_enable);
 			goto EXIT;
 		}
 	}
@@ -3637,7 +3640,7 @@ static int tp_suspend(struct device *dev)
 	/*step for suspend_gesture_cfg when ps is near ts->gesture_enable == 2*/
 	if (ts->suspend_gesture_cfg && ts->black_gesture_support
 	    && ts->gesture_enable == 2) {
-		ts->ts_ops->mode_switch(ts->chip_data, MODE_GESTURE, true);
+		mode_switch_health(ts, MODE_GESTURE, true);
 		operate_mode_switch(ts);
 		goto EXIT;
 	}
@@ -3648,7 +3651,7 @@ static int tp_suspend(struct device *dev)
 	}
 
 	/*step9:switch mode to sleep*/
-	ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_SLEEP, true);
+	ret = mode_switch_health(ts, MODE_SLEEP, true);
 
 	if (ret < 0) {
 		TP_INFO(ts->tp_index, "%s, Touchpanel operate mode switch failed\n", __func__);
@@ -3658,10 +3661,6 @@ EXIT:
 
 	if (ts->health_monitor_support) {
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_SUSPEND, &start_time);
-	}
-
-	if (ts->en_touch_event_helper) {
-		post_message(ts->msg_list, 0, TYPE_SUSPEND, NULL);
 	}
 
 	TP_INFO(ts->tp_index, "%s: end.\n", __func__);
@@ -3680,8 +3679,7 @@ EXIT:
 static void tp_resume(struct device *dev)
 {
 	struct touchpanel_data *ts = dev_get_drvdata(dev);
-	struct device_node *chip_np = NULL;
-	struct device_node *src_chip_np = NULL;
+
 	TP_INFO(ts->tp_index, "%s start.\n", __func__);
 
 	if (!ts->is_suspended) {
@@ -3702,7 +3700,7 @@ static void tp_resume(struct device *dev)
 		if (ts->int_mode == UNBANNABLE) {
 			mutex_lock(&ts->mutex);
 		}
-		devm_free_irq(ts->dev, ts->irq, ts);
+		free_irq(ts->irq, ts);
 		if (ts->int_mode == UNBANNABLE) {
 			mutex_unlock(&ts->mutex);
 		}
@@ -3714,13 +3712,14 @@ static void tp_resume(struct device *dev)
 		}
 	}
 
-	chip_np = is_support_child_node(ts->dev, ts);
-	if (!chip_np) {
-		TP_INFO(ts->tp_index, "chip_np not defined.\n");
-	} else {
-		src_chip_np = ts->dev->of_node;
-		ts->dev->of_node = chip_np;
-		ts->dev->of_node = src_chip_np;
+	if (ts->kernel_grip_support) {
+		if (ts->grip_info) {
+			kernel_grip_reset(ts->grip_info);
+
+		} else {
+			ts->grip_info = kernel_grip_init(ts->dev);
+			init_kernel_grip_proc(ts->prEntry_tp, ts->grip_info);
+		}
 	}
 
 	queue_work(ts->speedup_resume_wq, &ts->speed_up_work);
@@ -3800,7 +3799,7 @@ static void speedup_resume(struct work_struct *work)
 
 EXIT:
 	ts->suspend_state = TP_SPEEDUP_RESUME_COMPLETE;
-	if (ts->temperature_detect_support && ts->skin_therm_chan)
+	if ((ts->temperature_detect_support || ts->temperature_detect_shellback_support) && ts->skin_therm_chan)
 		hrtimer_start(&ts->temp_timer, ktime_set(15, 0), HRTIMER_MODE_REL);
 
 	if (ts->health_monitor_support) {
@@ -3812,11 +3811,16 @@ EXIT:
 	mutex_unlock(&ts->mutex);
 }
 
-#if IS_ENABLED(CONFIG_FB) || \
-	IS_ENABLED(CONFIG_DRM_MSM) || \
-	IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY) || \
-	IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY) || \
-	IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
+#if IS_ENABLED(CONFIG_FB) || IS_ENABLED(CONFIG_DRM_MSM) || IS_ENABLED(CONFIG_DRM_OPLUS_NOTIFY)
+static void lcd_off_pre_early_event(struct touchpanel_data *ts)
+{
+	ts->suspend_state = TP_SUSPEND_PRE_EARLY_EVENT;      /*set suspend_resume_state*/
+
+	if (ts->tp_suspend_order == TP_PRE_LCD_SUSPEND) {
+		tp_suspend(ts->dev);
+	}
+};
+
 static void lcd_off_early_event(struct touchpanel_data *ts)
 {
 	ts->suspend_state = TP_SUSPEND_EARLY_EVENT;      /*set suspend_resume_state*/
@@ -3862,11 +3866,9 @@ static void lcd_on_early_event(struct touchpanel_data *ts)
 static void lcd_on_event(struct touchpanel_data *ts)
 {
 	if (ts->tp_resume_order == TP_LCD_RESUME) {
-#ifdef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
-		tp_resume(ts->dev);
-#endif
 	} else if (ts->tp_resume_order == LCD_TP_RESUME) {
 		tp_resume(ts->dev);
+
 		if (!(ts->tp_ic_type == TYPE_TDDI_TCM && ts->is_noflash_ic)) {
 			enable_irq(ts->irq);
 		}
@@ -3891,104 +3893,11 @@ static void lcd_other_event(int *blank, struct touchpanel_data *ts)
 		tp_control_cs_gpio(1, ts->tp_index);
 	} else if (*blank == LCD_CTL_CS_OFF) {
 		tp_control_cs_gpio(0, ts->tp_index);
+	} else if (*blank == LCD_CTL_PRE_DISABLE) {
+		lcd_off_pre_early_event(ts);
 	}
 
 };
-
-#if IS_ENABLED(CONFIG_DRM_PANEL_NOTIFY)
-static void ts_panel_notifier_callback(enum panel_event_notifier_tag tag,
-		 struct panel_event_notification *notification, void *client_data)
-{
-	struct touchpanel_data *ts = client_data;
-
-	if (!notification) {
-		TP_INFO(ts->tp_index, "Invalid notification\n");
-		return;
-	}
-	if (notification->notif_type <= DRM_PANEL_EVENT_FOR_TOUCH) {
-		TP_INFO(ts->tp_index, "Notification type:%d, early_trigger:%d",
-			notification->notif_type,
-			notification->notif_data.early_trigger);
-	}
-	switch (notification->notif_type) {
-	case DRM_PANEL_EVENT_UNBLANK:
-		if (notification->notif_data.early_trigger)
-			lcd_on_early_event(ts);
-		else
-			lcd_on_event(ts);
-		break;
-	case DRM_PANEL_EVENT_BLANK:
-		if (notification->notif_data.early_trigger) {
-			if (ts->speedup_resume_wq) {
-				flush_workqueue(ts->speedup_resume_wq);        /*wait speedup_resume_wq done*/
-			}
-			lcd_off_early_event(ts);
-		} else {
-			lcd_off_event(ts);
-		}
-		break;
-	case DRM_PANEL_EVENT_BLANK_LP:
-		TP_INFO(ts->tp_index, "received lp event\n");
-		if (!notification->notif_data.early_trigger) {
-			lcd_off_event(ts);
-		}
-		break;
-	case DRM_PANEL_EVENT_FPS_CHANGE:
-		TP_INFO(ts->tp_index, "shashank:Received fps change old fps:%d new fps:%d\n",
-				notification->notif_data.old_fps,
-				notification->notif_data.new_fps);
-		break;
-	case DRM_PANEL_EVENT_FOR_TOUCH:
-		lcd_other_event(notification->notif_data.lcd_ctl_blank, ts);
-		break;
-	default:
-		if (notification->notif_type <= DRM_PANEL_EVENT_FOR_TOUCH) {
-			TP_INFO(ts->tp_index, "notification serviced :%d\n",
-				notification->notif_type);
-		}
-		break;
-	}
-}
-
-#elif IS_ENABLED(CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY)
-static int ts_mtk_drm_notifier_callback(struct notifier_block *nb,
-	unsigned long event, void *data)
-{
-	struct touchpanel_data *ts = container_of(nb, struct touchpanel_data,
-		disp_notifier);
-	int *blank = (int *)data;
-
-	TP_INFO(ts->tp_index, "mtk gki notifier event:%d, blank:%d",
-			event, *blank);
-
-	switch (event) {
-	case MTK_DISP_EARLY_EVENT_BLANK:
-		if (*blank == MTK_DISP_BLANK_UNBLANK) {
-			lcd_on_early_event(ts);
-		} else if (*blank == MTK_DISP_BLANK_POWERDOWN) {
-			if (ts->speedup_resume_wq) {
-				flush_workqueue(ts->speedup_resume_wq);		/*wait speedup_resume_wq done*/
-			}
-			lcd_off_early_event(ts);
-		}
-	break;
-	case MTK_DISP_EVENT_BLANK:
-		if (*blank == MTK_DISP_BLANK_UNBLANK) {
-			lcd_on_event(ts);
-		} else if (*blank == MTK_DISP_BLANK_POWERDOWN) {
-			lcd_off_event(ts);
-		}
-	break;
-	default:
-		TP_INFO(ts->tp_index, "nuknown event :%d\n", event);
-		lcd_other_event(blank, ts);
-	break;
-	}
-
-	return 0;
-}
-
-#else
 static int fb_notifier_callback(struct notifier_block *self, unsigned long event, void *data)
 {
 	int *blank;
@@ -4066,7 +3975,6 @@ static int fb_notifier_callback(struct notifier_block *self, unsigned long event
 	return 0;
 }
 #endif
-#endif
 
 /*
  * tp_shutdown - touchpanel shutdown function
@@ -4079,13 +3987,6 @@ void tp_shutdown(struct touchpanel_data *ts)
 	if (!ts) {
 		return;
 	}
-
-#ifdef CONFIG_OPLUS_MTK_DRM_GKI_NOTIFY
-	TPD_INFO("mtk gki2.0 need to unregister notifier");
-	if (mtk_disp_notifier_unregister(&ts->disp_notifier)) {
-			TP_INFO(ts->tp_index, "Failed to unregister mtk gki 2.0 disp notifier!!\n");
-	}
-#endif
 
 	/*step0 :close esd*/
 	if (ts->esd_handle_support) {
@@ -4254,7 +4155,7 @@ static void lcd_tp_load_fw(unsigned int tp_index)
 
 	if (ts->irq_trigger_hdl_support) {
 		TP_INFO(ts->tp_index, "%s\n", __func__);
-		devm_free_irq(ts->dev, ts->irq, ts);
+		free_irq(ts->irq, ts);
 		tp_register_irq_func(ts);
 
 	} else if (ts->lcd_trigger_load_tp_fw_support) {
@@ -4277,7 +4178,7 @@ static void lcd_tp_load_fw(unsigned int tp_index)
  * tp_gesture_enable_flag -   expose gesture control status for other module.
  * Return gesture_enable status.
  */
-#if IS_ENABLED(CONFIG_TOUCHPANEL_NOTIFY)
+ #if IS_ENABLED(CONFIG_TOUCHPANEL_NOTIFY)
 static int tp_gesture_enable_flag(unsigned int tp_index)
 {
 	struct touchpanel_data *ts = NULL;
@@ -4297,7 +4198,6 @@ static int tp_gesture_enable_flag(unsigned int tp_index)
 }
 #endif
 
-
 /*
 *Interface for lcd to control reset pin
 */
@@ -4312,13 +4212,21 @@ static int tp_control_reset_gpio(bool enable, unsigned int tp_index)
 	ts = g_tp[tp_index];
 
 	if (!ts) {
+		TPD_INFO("%s ts is NULL!\n", __func__);
 		return 0;
 	}
 
-	if (gpio_is_valid(ts->hw_res.reset_gpio)) {
-		if (ts->ts_ops->reset_gpio_control) {
-			ts->ts_ops->reset_gpio_control(ts->chip_data, enable);
+	if (ts->ts_ops) {
+		if (gpio_is_valid(ts->hw_res.reset_gpio)) {
+			if (!IS_ERR_OR_NULL(ts->ts_ops->reset_gpio_control)) {
+				ts->ts_ops->reset_gpio_control(ts->chip_data, enable);
+			} else {
+				TPD_INFO("%s reset_gpio_control is NULL!\n", __func__);
+			}
 		}
+	} else {
+		/* in ftm mode ts_ops will be null pointer */
+		TPD_INFO("%s ts->ts_ops is NULL!\n", __func__);
 	}
 
 	return 0;
@@ -4332,20 +4240,34 @@ static void tp_ftm_extra(unsigned int tp_index)
 	struct touchpanel_data *ts = NULL;
 
 	if (tp_index >= TP_SUPPORT_MAX) {
+		TPD_INFO("%s:tp_index is invilid,return.\n", __func__);
 		return;
 	}
 
 	ts = g_tp[tp_index];
 
-	if (!ts) {
+	if (IS_ERR_OR_NULL(ts)) {
+		TPD_INFO("%s:ts is null,return.\n", __func__);
 		return;
 	}
 
-	if (ts->ts_ops) {
-		if (ts->ts_ops->ftm_process_extra) {
-			ts->ts_ops->ftm_process_extra(ts->chip_data);
-		}
+	if (IS_ERR_OR_NULL(ts->ts_ops)) {
+		TPD_INFO("%s:ts_ops is null,return.\n", __func__);
+		return;
 	}
+
+	if (IS_ERR_OR_NULL(ts->ts_ops->ftm_process_extra)) {
+		TPD_INFO("%s:ftm_process_extra is null,return.\n", __func__);
+		return;
+	}
+
+	if (IS_ERR_OR_NULL(ts->chip_data)) {
+		TPD_INFO("%s:chip_data is null,return.\n", __func__);
+		return;
+	}
+
+	ts->ts_ops->ftm_process_extra(ts->chip_data);
+
 	return;
 }
 
@@ -4386,7 +4308,7 @@ static void lcd_tp_refresh_switch(unsigned int tp_index, int fps)
 	}
 
 	if (ts->lcd_tp_refresh_support) {
-		TP_INFO(ts->tp_index, "%s:fps:%d\n", __func__, fps);
+		TPD_INFO("%s:fps:%d\n", __func__, fps);
 		ts->lcd_fps = fps;
 		if (ts->ts_ops) {
 			if (ts->ts_ops->tp_refresh_switch && !ts->is_suspended
@@ -4411,29 +4333,60 @@ static int tp_control_cs_gpio(bool enable, unsigned int tp_index)
 	ts = g_tp[tp_index];
 
 	if (!ts) {
+		TPD_INFO("%s:ts is null,return.\n", __func__);
 		return 0;
 	}
 
 	if (gpio_is_valid(ts->hw_res.cs_gpio)) {
 		rc = gpio_direction_output(ts->hw_res.cs_gpio, enable);
 		if (rc) {
-			TP_INFO(ts->tp_index, "unable to set dir for cs_gpio rc=%d", rc);
+			TPD_INFO("unable to set dir for cs_gpio rc=%d", rc);
 		}
 		gpio_set_value(ts->hw_res.cs_gpio, enable);
 		TPD_INFO("%s:set cs %d\n", __func__, enable);
 	}
-	if (!IS_ERR_OR_NULL(ts->hw_res.pin_cs_high) && enable) {
-		TPD_INFO("%s: going to set cs on gpio mode and high.\n", __func__);
-		pinctrl_select_state(ts->hw_res.pinctrl, ts->hw_res.pin_cs_high);
-	} else if (!IS_ERR_OR_NULL(ts->hw_res.pin_cs_low) && !enable) {
-		TPD_INFO("%s: going to set cs on gpio mode and low.\n", __func__);
-		pinctrl_select_state(ts->hw_res.pinctrl, ts->hw_res.pin_cs_low);
-	} else {
-		TPD_INFO("%s: not to contrl cs.\n", __func__);
-	}
 
 	return 0;
 }
+
+void notify_pen_state(bool state, unsigned int tp_index)
+{
+	struct touchpanel_data *ts = NULL;
+
+	if (tp_index >= TP_SUPPORT_MAX) {
+		return;
+	}
+
+	ts = g_tp[tp_index];
+
+	if (!ts) {
+		return;
+	}
+
+
+#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
+	if ((ts->boot_mode == META_BOOT || ts->boot_mode == FACTORY_BOOT)) {
+#else
+	if ((ts->boot_mode == MSM_BOOT_MODE__FACTORY || ts->boot_mode == MSM_BOOT_MODE__RF || ts->boot_mode == MSM_BOOT_MODE__WLAN)) {
+#endif
+        TPD_INFO("Ftm mode, no need to notify pen state\n");
+        return;
+	}
+
+	if (ts->pen_support && (ts->is_pen_attracted != state)) {
+        mutex_lock(&ts->mutex);
+        ts->is_pen_attracted = state;
+        TPD_INFO("%s: check pen state0 : %d %d, is_suspended: %d\n", __func__, ts->is_pen_connected, ts->is_pen_attracted, ts->is_suspended);
+        if (!ts->is_suspended && (ts->suspend_state == TP_SPEEDUP_RESUME_COMPLETE)) {	/* For close pencil scan under screen on mode */
+			ts->ts_ops->mode_switch(ts->chip_data, MODE_PEN, ts->is_pen_connected && !ts->is_pen_attracted);
+		} else if (ts->is_suspended && ((ts->gesture_enable & 0x01) || ts->fp_enable)) {	/* set pencil scan under gesture mode */
+			ts->ts_ops->mode_switch(ts->chip_data, MODE_PEN, \
+				(ts->gesture_enable_indep & (1 << PENDETECT)) && ts->is_pen_connected && !ts->is_pen_attracted);
+		}
+        mutex_unlock(&ts->mutex);
+	}
+}
+EXPORT_SYMBOL(notify_pen_state);
 
 MODULE_DESCRIPTION("Touchscreen common Driver");
 MODULE_LICENSE("GPL");

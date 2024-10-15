@@ -28,9 +28,11 @@ static fw_update_state nvt_fw_update(void *chip_data, const struct firmware *fw,
 				     bool force);
 static int nvt_reset(void *chip_data);
 static int nvt_get_chip_info(void *chip_data);
+static int32_t nvt_ts_point_data_checksum(uint8_t *buf, uint8_t length);
 static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *points, int max_num);
 static int nvt_get_touch_points(void *chip_data, struct point_info *points, int max_num);
-static int32_t nvt_ts_point_data_checksum(uint8_t *buf, uint8_t length);
+extern int (*tp_reset_gpio_notifier)(bool enable, unsigned int tp_index);
+extern int (*tp_cs_gpio_notifier)(bool enable, unsigned int tp_index);
 
 /*******Part2: id map table Declear********************/
 static const struct nvt_ts_mem_map NT36675_memory_map = {
@@ -161,7 +163,7 @@ static int32_t nvt_write_addr(struct spi_device *client, uint32_t addr,
 }
 
 #if NVT_TOUCH_ESD_DISP_RECOVERY
-void nvt_sw_reset_idle(struct chip_data_nt36672c *chip_info)
+static void nvt_sw_reset_idle(struct chip_data_nt36672c *chip_info)
 {
 	/*---MCU idle cmds to SWRST_N8_ADDR---*/
 	TPD_INFO("%s is called!\n", __func__);
@@ -178,7 +180,7 @@ Description:
 return:
     n.a.
 *******************************************************/
-void nvt_bootloader_reset_noflash(struct chip_data_nt36672c *chip_info)
+static void nvt_bootloader_reset_noflash(struct chip_data_nt36672c *chip_info)
 {
 	/*---reset cmds to SWRST_N8_ADDR---*/
 	TPD_INFO("%s is called!\n", __func__);
@@ -275,7 +277,7 @@ return:
     not handled
 **********************************************************/
 
-int nvt_output_data(int *buffer, struct chip_data_nt36672c *ts_data,
+static int nvt_output_data(int *buffer, struct chip_data_nt36672c *ts_data,
 		    struct auto_testdata *nvt_testdata, int limit_type)
 {
 	uint8_t data_buf[64];
@@ -499,7 +501,66 @@ static int nvt_enter_sleep(struct chip_data_nt36672c *chip_info, bool config)
 	return ret;
 }
 
+/*******************************************************
+Description:
+        Novatek touchscreen get novatek project id information
+        function.
 
+return:
+        Executive outcomes. 0---success. -1---fail.
+*******************************************************/
+
+static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *points, int max_num)
+{
+	struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
+	int obj_attention = 0;
+	int i = 0;
+	uint32_t position = 0;
+	uint32_t input_x = 0;
+	uint32_t input_y = 0;
+	uint32_t input_w = 0;
+	uint32_t input_p = 0;
+	uint8_t pointid = 0;
+	uint8_t *point_data = chip_info->point_data;
+
+	for (i = 0; i < max_num; i++) {
+		position = 1 + 6 * i;
+		pointid = (uint8_t)(point_data[position + 0] >> 3) - 1;
+		if (pointid >= max_num) {
+			continue;
+		}
+
+		if (((point_data[position] & 0x07) == 0x01) ||
+				((point_data[position] & 0x07) == 0x02)) {
+			chip_info->irq_timer = jiffies;    /*reset esd check trigger base time*/
+
+			input_x = (uint32_t)(point_data[position + 1] << 8) + (uint32_t) (point_data[position + 2]);
+			input_y = (uint32_t)(point_data[position + 3] << 8) + (uint32_t) (point_data[position + 4]);
+
+			input_w = (uint32_t)(point_data[position + 5]);
+			if (input_w == 0) {
+				input_w = 1;
+			}
+
+			input_p = input_w;
+
+			obj_attention = obj_attention | (1 << pointid);
+			points[pointid].x = input_x;
+			points[pointid].y = input_y;
+			points[pointid].z = input_p;
+			points[pointid].width_major = input_w;
+			points[pointid].touch_major = input_w;
+			points[pointid].status = 1;
+		}
+	}
+
+#ifdef CONFIG_OPLUS_TP_APK
+	if (chip_info->debug_mode_sta) {
+		nova_debug_info(chip_info, &point_data[109]);
+	}
+#endif /* end of CONFIG_OPLUS_TP_APK*/
+	return obj_attention;
+}
 
 static int32_t nvt_get_fw_info_noflash(struct chip_data_nt36672c *chip_info)
 {
@@ -1326,7 +1387,7 @@ static int32_t Download_Firmware_HW_CRC(struct chip_data_nt36672c *chip_info,
 	return ret;
 }
 
-int32_t nvt_nf_detect_chip(struct chip_data_nt36672c *chip_info)
+static int32_t nvt_nf_detect_chip(struct chip_data_nt36672c *chip_info)
 {
 	int32_t ret = 0;
 	int i;
@@ -1364,6 +1425,12 @@ static int nvt_ftm_process(void *chip_data)
 
 	TPD_INFO("%s is called!\n", __func__);
 
+	ret = nvt_nf_detect_chip(chip_info);
+	if(ret < 0) {
+		TPD_INFO("no find novatek chip or spi fatal error\n");
+		return -EINVAL;
+	}
+
 	ret = nvt_get_chip_info(chip_info);
 
 	if (!ret) {
@@ -1375,6 +1442,11 @@ static int nvt_ftm_process(void *chip_data)
 		} else {
 			ret = nvt_enter_sleep(chip_info, true);
 		}
+	}
+
+	if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
+		TPD_INFO("%s: set reset gpio(%d) to low\n", __func__, chip_info->hw_res->reset_gpio);
+		gpio_set_value(chip_info->hw_res->reset_gpio, 0);
 	}
 
 	return ret;
@@ -1429,6 +1501,7 @@ static int nvt_reset_gpio_control(void *chip_data, bool enable)
 {
 	struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
 
+	TPD_INFO("%s  is called\n", __func__);
 	if (gpio_is_valid(chip_info->hw_res->reset_gpio)) {
 		TPD_INFO("%s: set reset state %d\n", __func__, enable);
 		gpio_set_value(chip_info->hw_res->reset_gpio, enable);
@@ -1667,57 +1740,6 @@ static int32_t nvt_ts_point_data_checksum(uint8_t *buf, uint8_t length)
 	return 0;
 }
 
-static int nvt_get_touch_points_high_reso(void *chip_data, struct point_info *points, int max_num)
-{
-    struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
-    int obj_attention = 0;
-    int i = 0;
-    uint32_t position = 0;
-    uint32_t input_x = 0;
-    uint32_t input_y = 0;
-    uint32_t input_w = 0;
-    uint32_t input_p = 0;
-    uint8_t pointid = 0;
-    uint8_t *point_data = chip_info->point_data;
-
-    for(i = 0; i < max_num; i++) {
-        position = 1 + 6 * i;
-        pointid = (uint8_t)(point_data[position + 0] >> 3) - 1;
-        if (pointid >= max_num) {
-            continue;
-        }
-
-        if (((point_data[position] & 0x07) == 0x01) ||
-                ((point_data[position] & 0x07) == 0x02)) {
-            chip_info->irq_timer = jiffies;    //reset esd check trigger base time
-
-            input_x = (uint32_t)(point_data[position + 1] << 8) + (uint32_t) (point_data[position + 2]);
-            input_y = (uint32_t)(point_data[position + 3] << 8) + (uint32_t) (point_data[position + 4]);
-
-            input_w = (uint32_t)(point_data[position + 5]);
-            if (input_w == 0) {
-                input_w = 1;
-            }
-
-            input_p = input_w;
-
-            obj_attention = obj_attention | (1 << pointid);
-            points[pointid].x = input_x;
-            points[pointid].y = input_y;
-            points[pointid].z = input_p;
-            points[pointid].width_major = input_w;
-            points[pointid].touch_major = input_w;
-            points[pointid].status = 1;
-        }
-    }
-
-#ifdef CONFIG_OPLUS_TP_APK
-    if (chip_info->debug_mode_sta) {
-        nova_debug_info(chip_info, &point_data[109]);
-    }
-#endif // end of CONFIG_OPLUS_TP_APK
-    return obj_attention;
-}
 
 static int nvt_get_touch_points(void *chip_data, struct point_info *points,
 				int max_num)
@@ -1790,6 +1812,42 @@ static int nvt_get_touch_points(void *chip_data, struct point_info *points,
 
 #endif /* end of CONFIG_OPLUS_TP_APK*/
 	return obj_attention;
+}
+
+static int8_t nvt_extend_cmd2_store(struct chip_data_nt36672c *chip_info,
+			uint8_t u8Cmd, uint8_t u8SubCmd, uint8_t u8SubCmd1)
+{
+	int i, retry = 5;
+	uint8_t buf[4] = {0};
+	/*---set xdata index to EVENT BUF ADDR---(set page)*/
+	nvt_set_page(chip_info, chip_info->trim_id_table.mmap->EVENT_BUF_ADDR);
+	for (i = 0; i < retry; i++) {
+		/*---set cmd status---*/
+		buf[0] = EVENT_MAP_HOST_CMD;
+		buf[1] = u8Cmd;
+		buf[2] = u8SubCmd;
+		buf[3] = u8SubCmd1;
+		CTP_SPI_WRITE(chip_info->s_client, buf, 4);
+		msleep(20);
+		/*---read cmd status---*/
+		buf[0] = EVENT_MAP_HOST_CMD;
+		buf[1] = 0xFF;
+		CTP_SPI_READ(chip_info->s_client, buf, 2);
+		if (buf[1] == 0x00) {
+			break;
+		} else {
+			TPD_INFO("cmd2 melo read buf1[%d] \n", buf[1]);
+		}
+	}
+	if (unlikely(i == retry)) {
+		TPD_INFO("send Cmd 0x%02X 0x%02X 0x%02X failed, buf[1]=0x%02X\n",
+				u8Cmd, u8SubCmd, u8SubCmd1, buf[1]);
+		return -1;
+	} else {
+		TPD_INFO("send Cmd 0x%02X 0x%02X 0x%02X success, tried %d times\n",
+				u8Cmd, u8SubCmd, u8SubCmd1, i);
+	}
+	return 0;
 }
 
 static int8_t nvt_extend_cmd_store(struct chip_data_nt36672c *chip_info,
@@ -2077,138 +2135,142 @@ static int nvt_get_gesture_info(void *chip_data, struct gesture_info *gesture)
 	switch (gesture_id) {   /*judge gesture type*/
 	case RIGHT_SLIDE_DETECT :
 		gesture->gesture_type  = LEFT2RIGHT_SWIP;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_end.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case LEFT_SLIDE_DETECT :
 		gesture->gesture_type  = RIGHT2LEFT_SWIP;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_end.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case DOWN_SLIDE_DETECT  :
 		gesture->gesture_type  = UP2DOWN_SWIP;
-		gesture->Point_start.x = point_data[4]  | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6]  | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[8]  | point_data[9] << 8;
-		gesture->Point_end.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case UP_SLIDE_DETECT :
 		gesture->gesture_type  = DOWN2UP_SWIP;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_end.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case DTAP_DETECT:
 		gesture->gesture_type  = DOU_TAP;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
 		gesture->Point_end     = gesture->Point_start;
 		break;
 
 	case UP_VEE_DETECT :
 		gesture->gesture_type  = UP_VEE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_end.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case DOWN_VEE_DETECT :
 		gesture->gesture_type  = DOWN_VEE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_end.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case LEFT_VEE_DETECT:
 		gesture->gesture_type = LEFT_VEE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_end.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case RIGHT_VEE_DETECT :
 		gesture->gesture_type  = RIGHT_VEE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_end.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
 		break;
 
 	case CIRCLE_DETECT  :
 		gesture->gesture_type = CIRCLE_GESTURE;
 		gesture->clockwise = (point_data[43] == 0x20) ? 1 : 0;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;   /*ymin*/
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
-		gesture->Point_2nd.x   = point_data[12] | point_data[13] << 8; /*xmin*/
-		gesture->Point_2nd.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_3rd.x   = point_data[16] | point_data[17] << 8; /*ymax*/
-		gesture->Point_3rd.y   = point_data[18] | point_data[19] << 8;
-		gesture->Point_4th.x   = point_data[20] | point_data[21] << 8; /*ymax*/
-		gesture->Point_4th.y   = point_data[22] | point_data[23] << 8;
-		gesture->Point_end.x   = point_data[24] | point_data[25] << 8;
-		gesture->Point_end.y   = point_data[26] | point_data[27] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) <<
+					 8;    /*ymin*/
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
+		gesture->Point_2nd.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) <<
+					 8;  /*xmin*/
+		gesture->Point_2nd.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_3rd.x   = (point_data[16] & 0xFF) | (point_data[17] & 0x0F) <<
+					 8;  /*ymax*/
+		gesture->Point_3rd.y   = (point_data[18] & 0xFF) | (point_data[19] & 0x0F) << 8;
+		gesture->Point_4th.x   = (point_data[20] & 0xFF) | (point_data[21] & 0x0F) <<
+					 8;  /*xmax*/
+		gesture->Point_4th.y   = (point_data[22] & 0xFF) | (point_data[23] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[24] & 0xFF) | (point_data[25] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[26] & 0xFF) | (point_data[27] & 0x0F) << 8;
 		break;
 
 	case DOUSWIP_DETECT  :
 		gesture->gesture_type  = DOU_SWIP;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_end.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_end.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
-		gesture->Point_2nd.x   = point_data[16] | point_data[17] << 8;
-		gesture->Point_2nd.y   = point_data[18] | point_data[19] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
+		gesture->Point_2nd.x   = (point_data[16] & 0xFF) | (point_data[17] & 0x0F) << 8;
+		gesture->Point_2nd.y   = (point_data[18] & 0xFF) | (point_data[19] & 0x0F) << 8;
 		break;
 
 	case M_DETECT  :
 		gesture->gesture_type  = M_GESTRUE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
-		gesture->Point_2nd.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_2nd.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_3rd.x   = point_data[16] | point_data[17] << 8;
-		gesture->Point_3rd.y   = point_data[18] | point_data[19] << 8;
-		gesture->Point_end.x   = point_data[20] | point_data[21] << 8;
-		gesture->Point_end.y   = point_data[22] | point_data[23] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
+		gesture->Point_2nd.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_2nd.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_3rd.x   = (point_data[16] & 0xFF) | (point_data[17] & 0x0F) << 8;
+		gesture->Point_3rd.y   = (point_data[18] & 0xFF) | (point_data[19] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[20] & 0xFF) | (point_data[21] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[22] & 0xFF) | (point_data[23] & 0x0F) << 8;
 		break;
 
 	case W_DETECT :
 		gesture->gesture_type  = W_GESTURE;
-		gesture->Point_start.x = point_data[4] | point_data[5] << 8;
-		gesture->Point_start.y = point_data[6] | point_data[7] << 8;
-		gesture->Point_1st.x   = point_data[8] | point_data[9] << 8;
-		gesture->Point_1st.y   = point_data[10] | point_data[11] << 8;
-		gesture->Point_2nd.x   = point_data[12] | point_data[13] << 8;
-		gesture->Point_2nd.y   = point_data[14] | point_data[15] << 8;
-		gesture->Point_3rd.x   = point_data[16] | point_data[17] << 8;
-		gesture->Point_3rd.y   = point_data[18] | point_data[19] << 8;
-		gesture->Point_end.x   = point_data[20] | point_data[21] << 8;
-		gesture->Point_end.y   = point_data[22] | point_data[23] << 8;
+		gesture->Point_start.x = (point_data[4] & 0xFF) | (point_data[5] & 0x0F) << 8;
+		gesture->Point_start.y = (point_data[6] & 0xFF) | (point_data[7] & 0x0F) << 8;
+		gesture->Point_1st.x   = (point_data[8] & 0xFF) | (point_data[9] & 0x0F) << 8;
+		gesture->Point_1st.y   = (point_data[10] & 0xFF) | (point_data[11] & 0x0F) << 8;
+		gesture->Point_2nd.x   = (point_data[12] & 0xFF) | (point_data[13] & 0x0F) << 8;
+		gesture->Point_2nd.y   = (point_data[14] & 0xFF) | (point_data[15] & 0x0F) << 8;
+		gesture->Point_3rd.x   = (point_data[16] & 0xFF) | (point_data[17] & 0x0F) << 8;
+		gesture->Point_3rd.y   = (point_data[18] & 0xFF) | (point_data[19] & 0x0F) << 8;
+		gesture->Point_end.x   = (point_data[20] & 0xFF) | (point_data[21] & 0x0F) << 8;
+		gesture->Point_end.y   = (point_data[22] & 0xFF) | (point_data[23] & 0x0F) << 8;
 		break;
 
 	default:
@@ -2424,6 +2486,28 @@ static int nvt_enable_headset_mode(struct chip_data_nt36672c *chip_info,
 		ret = nvt_cmd_store(chip_info, EVENTBUFFER_HS_PLUG_OUT);
 	}
 
+	return ret;
+}
+
+static int nvt_sensitive_lv_set(void *chip_data, int level)
+{
+	int8_t ret = -1;
+	struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
+
+	TPD_INFO("%s: sensitive value = %d, chip_info->is_sleep_writed = %d\n", __func__, level, chip_info->is_sleep_writed);
+
+	ret = nvt_extend_cmd2_store(chip_info, EVENTBUFFER_EXT_CMD, EVENTBUFFER_EXT_JITTER_LEVEL, level);
+	return ret;
+}
+
+static int nvt_smooth_lv_set(void *chip_data, int level)
+{
+	int8_t ret = -1;
+	struct chip_data_nt36672c *chip_info = (struct chip_data_nt36672c *)chip_data;
+
+	TPD_INFO("%s: smooth value = %d, chip_info->is_sleep_writed = %d\n", __func__, level, chip_info->is_sleep_writed);
+
+	ret = nvt_extend_cmd2_store(chip_info, EVENTBUFFER_EXT_CMD, EVENTBUFFER_EXT_SMOOTH_LEVEL, level);
 	return ret;
 }
 
@@ -2777,6 +2861,7 @@ static void nvt_change_mode(struct chip_data_nt36672c *chip_info, uint8_t mode)
 	CTP_SPI_WRITE(chip_info->s_client, buf, 2);
 
 	if (mode == NORMAL_MODE) {
+		msleep(20);
 		buf[0] = EVENT_MAP_HANDSHAKING_or_SUB_CMD_BYTE;
 		buf[1] = HANDSHAKING_HOST_READY;
 		CTP_SPI_WRITE(chip_info->s_client, buf, 2);
@@ -2996,8 +3081,8 @@ static int32_t nvt_polling_hand_shake_status(
 {
 	uint8_t buf[8] = {0};
 	int32_t i = 0;
-	const int32_t retry = 50;
-
+	const int32_t retry = 250;
+	msleep(20);
 	for (i = 0; i < retry; i++) {
 		/*---set xdata index to EVENT BUF ADDR---*/
 		nvt_set_page(chip_info, chip_info->trim_id_table.mmap->EVENT_BUF_ADDR |
@@ -3029,7 +3114,7 @@ static int32_t nvt_check_fw_status(struct chip_data_nt36672c *chip_info)
 	uint8_t buf[8] = {0};
 	int32_t i = 0;
 	const int32_t retry = 50;
-
+	msleep(20);
 	for (i = 0; i < retry; i++) {
 		/*---set xdata index to EVENT BUF ADDR---*/
 		nvt_set_page(chip_info, chip_info->trim_id_table.mmap->EVENT_BUF_ADDR |
@@ -3432,7 +3517,7 @@ out_fail:
 		      (chip_info->partition + 1) * sizeof(struct nvt_ts_bin_map));
 	tp_devm_kfree(&chip_info->s_client->dev, (void **)&request_fw_headfile,
 		      sizeof(struct firmware));
-	return FW_NO_NEED_UPDATE;
+	return FW_UPDATE_ERROR;
 }
 
 
@@ -3634,7 +3719,8 @@ static int nvt_lpwg_rawdata_test(struct seq_file *s, void *chip_data,
 			       raw_data, buf_len);
 	}
 
-	if (chip_info->p_nvt_autotest_offset->lpwg_rawdata_n) {
+	if (chip_info->p_nvt_autotest_offset->lpwg_rawdata_n
+			&& chip_info->p_nvt_autotest_offset->lpwg_rawdata_n) {
 		snprintf(data_buf, 64, "%s\n", "[NVT LPWG RAW DATA]");
 		tp_test_write(nvt_testdata->fp, nvt_testdata->length, data_buf,
 			      strlen(data_buf), nvt_testdata->pos);
@@ -4582,6 +4668,8 @@ static struct oplus_touchpanel_operations nvt_ops = {
 	.get_vendor                 = nvt_get_vendor,
 	.esd_handle                 = nvt_esd_handle,
 	.reset_gpio_control         = nvt_reset_gpio_control,
+	.smooth_lv_set              = nvt_smooth_lv_set,
+	.sensitive_lv_set           = nvt_sensitive_lv_set,
 };
 
 static void nvt_data_read(struct seq_file *s,
@@ -6201,7 +6289,11 @@ static int nvt_autotest_preoperation(struct seq_file *s, void *chip_data,
 	}
 
 	TPD_INFO("update test firmware successed!\n");
-
+	if (nvt_check_fw_reset_state_noflash(chip_info, RESET_STATE_REK)) {
+		TPD_INFO("check fw reset state failed!\n");
+		seq_printf(s, "check fw reset state failed!\n");
+		goto RELEASE_FIRMWARE;
+	}
 	if (nvt_switch_FreqHopEnDis(chip_info, FREQ_HOP_DISABLE)) {
 		TPD_INFO("switch frequency hopping disable failed!\n");
 		/*seq_printf(s, "switch frequency hopping disable failed!\n");*/
@@ -6741,13 +6833,13 @@ static struct nvt_auto_test_operations nvt_test_ops = {
 };
 
 
-struct engineer_test_operations nvt_engineer_test_ops = {
+static struct engineer_test_operations nvt_engineer_test_ops = {
 	.auto_test                  = nvt_auto_test,
 	.black_screen_test          = nvt_black_screen_autotest,
 };
 
 /*********** Start of SPI Driver and Implementation of it's callbacks*************************/
-int nvt_tp_probe(struct spi_device *client)
+static int nvt_tp_probe(struct spi_device *client)
 {
 	struct chip_data_nt36672c *chip_info = NULL;
 	struct touchpanel_data *ts = NULL;
@@ -6861,6 +6953,14 @@ int nvt_tp_probe(struct spi_device *client)
 		goto err_register_driver;
 	}
 
+	/* set spi cs pin to high for normal boot */
+	if (tp_cs_gpio_notifier) {
+		tp_cs_gpio_notifier(1, ts->tp_index);
+		TPD_INFO("%s: set spi cs pin to high for normal boot.\n", __func__);
+	} else {
+		TPD_INFO("%s: tp_cs_gpio_notifier is null.\n", __func__);
+	}
+
 	ts->tp_suspend_order = TP_LCD_SUSPEND;
 	ts->tp_resume_order = LCD_TP_RESUME;
 	chip_info->is_sleep_writed = false;
@@ -6938,7 +7038,7 @@ ts_malloc_failed:
 	TPD_INFO("%s, probe error\n", __func__);
 	return ret;
 }
-int nvt_tp_remove(struct spi_device *client)
+static int nvt_tp_remove(struct spi_device *client)
 {
 	struct touchpanel_data *ts = spi_get_drvdata(client);
 
@@ -6947,7 +7047,6 @@ int nvt_tp_remove(struct spi_device *client)
 	if (ts) {
 		unregister_common_touch_device(ts);
 		common_touch_data_free(ts);
-		tp_kfree((void **)&ts);
 	}
 
 	return 0;
@@ -7012,15 +7111,14 @@ static struct spi_driver tp_spi_driver = {
 static int __init nvt_driver_init(void)
 {
 	TPD_INFO("%s is called\n", __func__);
-/*
+
 #if IS_MODULE(CONFIG_TOUCHPANEL_OPLUS)
 	msleep(10000);
 	TPD_INFO("%s  TP ko delay 10 s\n", __func__);
 #endif
-*/
 
 	if (!tp_judge_ic_match(DRIVER_NAME)) {
-		return 0;
+		return -1;
 	}
 
 	get_oem_verified_boot_state();

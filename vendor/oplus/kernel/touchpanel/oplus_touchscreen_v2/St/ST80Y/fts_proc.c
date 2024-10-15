@@ -459,9 +459,8 @@ static void *fts_seq_start(struct seq_file *s, loff_t *pos)
 			*pos += St80yProcData->chunk - 1;
 		}
 
-		if (*pos >= St80yProcData->limit)
+		if (*pos >= St80yProcData->limit) {
 			/* TPD_DEBUG("%s: Apparently, we're done.\n", __func__); */
-		{
 			return NULL;
 		}
 	}

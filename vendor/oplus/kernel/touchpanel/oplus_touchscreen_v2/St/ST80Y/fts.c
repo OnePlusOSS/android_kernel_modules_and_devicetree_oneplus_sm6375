@@ -3319,7 +3319,7 @@ static int disableGesture(void *chip_data, u8 *mask, int size)
 	if (size <= GESTURE_MASK_SIZE) {
 		if (mask != NULL) {
 			for (i = 0; i < size; i++) {
-				temp =info->gesture_mask[i] ^ mask[i];
+				temp = info->gesture_mask[i] ^ mask[i];
 				/* enabled mask XOR disabled mask */
 				info->gesture_mask[i] = temp & info->gesture_mask[i];
 				/* temp AND enabled
@@ -4359,7 +4359,7 @@ static int flash_erase_page_by_page(void *chip_data, Firmware fw, ErasePage keep
 	struct fts_ts_info *info = (struct fts_ts_info *)chip_data;
 
 	start = (int)(fw.flash_org_info[0] + fw.flash_org_info[1]);
-	end = (int)(fw.flash_org_info[0] + fw.flash_org_info[1] + fw.flash_org_info[2]) ;
+	end = (int)(fw.flash_org_info[0] + fw.flash_org_info[1] + fw.flash_org_info[2]);
 
 	TPD_INFO("%s Cx page start:%d end:%d\n", __func__, start, end - 1);
 	for (i = start; i < end && keep_cx >= SKIP_PANEL_CX_INIT; i++) {
@@ -5287,7 +5287,7 @@ static struct oplus_touchpanel_operations st80y_ops = {
 	.calibrate                 = st80y_calibrate,
 	.get_cal_status            = st80y_get_cal_status,
 	.freq_hop_trigger		   = st80y_freq_hop_trigger,
-        .set_high_frame_rate       = st80y_set_high_frame_rate,
+	.set_high_frame_rate       = st80y_set_high_frame_rate,
 };
 
 /* st80y delta data read func */
@@ -5594,7 +5594,7 @@ static void st80y_main_register_read(struct seq_file *s, void *chip_data)
 	struct fts_ts_info *chip_info = (struct fts_ts_info *)chip_data;
 
 	if (!chip_info) {
-		return ;
+		return;
 	}
 
 	TPD_INFO("%s start\n", __func__);
@@ -7156,7 +7156,6 @@ static struct engineer_test_operations st_engineer_test_ops = {
 
 static int st80y_probe(struct i2c_client *client, const struct i2c_device_id *idp)
 {
-
 	struct fts_ts_info *info = NULL;
 	struct touchpanel_data *ts = NULL;
 	int ret = 0;

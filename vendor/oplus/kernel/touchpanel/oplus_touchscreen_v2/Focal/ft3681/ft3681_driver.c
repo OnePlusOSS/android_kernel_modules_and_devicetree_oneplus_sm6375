@@ -14,6 +14,7 @@
 #endif
 #include "ft3681_core.h"
 struct chip_data_ft3681 *g_fts3681_data = NULL;
+bool ft3681_grip_v2_support = true;
 
 /*******Part0:LOG TAG Declear********************/
 
@@ -132,7 +133,6 @@ const struct mtk_chip_config st_spi_ctrdata = {
 /*******Part1:Call Back Function implement*******/
 static void fts_read_fod_info(struct chip_data_ft3681 *ts_data);
 static void fts_read_aod_info(struct chip_data_ft3681 *ts_data);
-static void fts_get_rawdata_snr(struct chip_data_ft3681 *ts_data);
 static int fts_get_gesture_info(void *chip_data, struct gesture_info *gesture);
 
 /* spi interface */
@@ -547,7 +547,7 @@ static int fts_power_control(void *chip_data, bool enable)
 		if (ret) {
 			return -1;
 		}
-
+		msleep(1);
 		ret = tp_powercontrol_avdd(ts_data->hw_res, true);
 
 		if (ret) {
@@ -566,7 +566,7 @@ static int fts_power_control(void *chip_data, bool enable)
 		if (ret) {
 			return -1;
 		}
-
+		msleep(1);
 		ret = tp_powercontrol_vddi(ts_data->hw_res, false);
 
 		if (ret) {
@@ -695,6 +695,7 @@ static int fts_esd_handle(void *chip_data)
 		flow_work_cnt_last = 0;
 		err_cnt = 0;
 		spi_err = 0;
+		return -1;
 	}
 
 NORMAL_END:
@@ -1562,7 +1563,7 @@ raw_err:
 	return ret;
 }
 
-/*
+
 #define DATA_LEN_EACH_RAW 17
 static void fts_self_delta_read(struct seq_file *s, void *chip_data)
 {
@@ -1637,7 +1638,6 @@ raw_fail:
 	focal_esd_check_enable(ts_data, true);
 	kfree(raw);
 }
-*/
 
 static void fts_delta_read(struct seq_file *s, void *chip_data)
 {
@@ -1645,82 +1645,47 @@ static void fts_delta_read(struct seq_file *s, void *chip_data)
 	int i = 0;
 	int j = 0;
 	struct chip_data_ft3681 *ts_data = (struct chip_data_ft3681 *)chip_data;
+	int *raw = NULL;
 	int tx_num = ts_data->hw_res->tx_num;
 	int rx_num = ts_data->hw_res->rx_num;
-	u8 *touch_buf = ts_data->snr_buf;
-	u8 cmd = FTS_REG_POINTS;
 
 	TPD_INFO("%s:start to read diff data", __func__);
 	focal_esd_check_enable(ts_data, false);   /*no allowed esd check*/
 
-	ret = ft3681_fts_write_reg(FTS_REG_POWER_MODE, 0x00);
-	if (ret < 0) {
-		TPD_INFO("%s:set tp power_mode fail", __func__);
-	}
-	TPD_INFO("%s:set tp power_mode success", __func__);
+	raw = kzalloc(tx_num * rx_num * sizeof(int), GFP_KERNEL);
 
-	ret = ft3681_fts_write_reg(FTS_REG_WORK_MODE, FTS_REG_WORK_MODE_SNR_MODE);
-	if (ret < 0) {
-		TPD_INFO("%s:open fastdiff fail", __func__);
+	if (!raw) {
+		seq_printf(s, "kzalloc for raw fail\n");
 		goto raw_fail;
 	}
-	TPD_INFO("%s:open fastdiff test success", __func__);
-	msleep(50);
 
-	for (j = 0; j < 10; j++) {
-		memset(touch_buf, 0xFF, FTS_MAX_POINTS_SNR_LENGTH);
-		ret = ft3681_fts_read(&cmd, 1, &touch_buf[0], FTS_MAX_POINTS_SNR_LENGTH);
-		ts_data->snr_data_is_ready = 1;
-		fts_get_rawdata_snr(ts_data);
-		if (ts_data->snr_count != 255) {
-			TPD_INFO("%s:get rawdata suc,count:%u.", __func__, ts_data->snr_count);
-			break;
-		} else {
-			TPD_INFO("%s:get rawdata fail,count:%u,time:%d.", __func__, ts_data->snr_count, j);
-		}
-		msleep(10);
+	ret = ft3681_fts_write_reg(FTS_REG_AUTOCLB_ADDR, 0x01);
+
+	if (ret < 0) {
+		TPD_INFO("%s, write 0x01 to reg 0xee failed \n", __func__);
 	}
 
-	seq_printf(s, "mutual diff data:");
+	ret = fts_get_rawdata(ts_data, raw, true);
+
+	if (ret < 0) {
+		seq_printf(s, "get diff data fail\n");
+		goto raw_fail;
+	}
+
 	for (i = 0; i < tx_num; i++) {
 		seq_printf(s, "\n[%2d]", i + 1);
 
 		for (j = 0; j < rx_num; j++) {
-			seq_printf(s, " %5d,", ts_data->diff_buf[i * rx_num + j]);
+			seq_printf(s, " %5d,", raw[i * rx_num + j]);
 		}
 	}
-	seq_printf(s, "\n");
 
-	seq_printf(s, "sc_water diff data:\n");
-	seq_printf(s, "[rx]");
-	for (i = 0; i < rx_num; i++) {
-		seq_printf(s, " %5d,", ts_data->sc_water[i]);
-	}
-	seq_printf(s, "\n");
-
-	seq_printf(s, "[tx]");
-	for (i = 0; i < tx_num; i++) {
-		seq_printf(s, " %5d,", ts_data->sc_water[i + rx_num]);
-	}
-	seq_printf(s, "\n");
-
-	seq_printf(s, "sc_nomal diff data:\n");
-	seq_printf(s, "[rx]");
-	for (i = 0; i < rx_num; i++) {
-		seq_printf(s, " %5d,", ts_data->sc_nomal[i]);
-	}
-	seq_printf(s, "\n");
-
-	seq_printf(s, "[tx]");
-	for (i = 0; i < tx_num; i++) {
-		seq_printf(s, " %5d,", ts_data->sc_nomal[i + rx_num]);
-	}
 	seq_printf(s, "\n");
 
 raw_fail:
-	ft3681_fts_write_reg(FTS_REG_WORK_MODE, FTS_REG_WORK_MODE_NORMAL_MODE);
-	msleep(30);
+	ft3681_fts_write_reg(FTS_REG_AUTOCLB_ADDR, 0x00);
 	focal_esd_check_enable(ts_data, true);
+	kfree(raw);
 }
 
 static void fts_baseline_read(struct seq_file *s, void *chip_data)
@@ -1775,12 +1740,6 @@ raw_fail:
 static void fts_main_register_read(struct seq_file *s, void *chip_data)
 {
 	u8 regvalue = 0;
-	u8 cmd = FTS_REG_FOD_INFO;
-	u8 val[10] = { 0 };
-
-	/*TP FW mode*/
-	ft3681_fts_read_reg(FTS_REG_POWER_MODE, &regvalue);
-	seq_printf(s, "TP Power Mode:0x%02x\n", regvalue);
 
 	/*TP FW version*/
 	ft3681_fts_read_reg(FTS_REG_FW_VER, &regvalue);
@@ -1794,12 +1753,6 @@ static void fts_main_register_read(struct seq_file *s, void *chip_data)
 	ft3681_fts_read_reg(FTS_REG_GESTURE_EN, &regvalue);
 	seq_printf(s, "Gesture Mode:0x%02x\n", regvalue);
 
-	/*Fod info*/
-	memset(val, 0xFF, 10);
-	ft3681_fts_read(&cmd, 1, val, FTS_REG_FOD_INFO_LEN);
-	seq_printf(s, "FOD_INFO:0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n", val[0],
-		  val[1], val[2], val[3], val[4], val[5], val[6], val[7], val[8]);
-
 	/*charge in*/
 	ft3681_fts_read_reg(FTS_REG_CTRL, &regvalue);
 	seq_printf(s, "Control state:0x%02x\n", regvalue);
@@ -1812,6 +1765,10 @@ static void fts_main_register_read(struct seq_file *s, void *chip_data)
 	ft3681_fts_read_reg(FTS_REG_INT_CNT, &regvalue);
 	seq_printf(s, "INT count:0x%02x\n", regvalue);
 
+	/*Interrupt counter*/
+	ft3681_fts_read_reg(FTS_REG_MC_THGROUP, &regvalue);
+	seq_printf(s, "MC Point Threshold:0x%02x\n", regvalue);
+
 	/*Flow work counter*/
 	ft3681_fts_read_reg(FTS_REG_FLOW_WORK_CNT, &regvalue);
 	seq_printf(s, "ESD count:0x%02x\n", regvalue);
@@ -1819,32 +1776,6 @@ static void fts_main_register_read(struct seq_file *s, void *chip_data)
 	/*Panel ID*/
 	ft3681_fts_read_reg(FTS_REG_MODULE_ID, &regvalue);
 	seq_printf(s, "PANEL ID:0x%02x\n", regvalue);
-
-	/*TP FACTORY_REG_LINE_ADDR 0x01*/
-	ft3681_fts_read_reg(FACTORY_REG_LINE_ADDR, &regvalue);
-	seq_printf(s, "TP Factory Reg:0x%02x\n", regvalue);
-
-	/*noise status info*/
-	cmd = FTS_REG_HEALTH_1;
-	memset(val, 0xFF, 10);
-	ft3681_fts_read(&cmd, 1, val, 10);
-	seq_printf(s, "Noise Status:0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n", val[0],
-		  val[1], val[2], val[3], val[4], val[5], val[6], val[7], val[8], val[9]);
-
-	/*freq info*/
-	ft3681_fts_read_reg(FTS_REG_HEALTH_2, &regvalue);
-	seq_printf(s, "TP Freq:0x%02x\n", regvalue);
-
-	/*fw info*/
-	cmd = FTS_FW_INFO;
-	memset(val, 0xFF, 10);
-	ft3681_fts_read(&cmd, 1, val, 10);
-	seq_printf(s, "Fw Info:0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x 0x%02x\n", val[0],
-		  val[1], val[2], val[3], val[4], val[5], val[6], val[7], val[8], val[9]);
-
-	/*Temperature info*/
-	ft3681_fts_read_reg(FTS_REG_TEMPERATURE, &regvalue);
-	seq_printf(s, "TP Temperature:0x%02x\n", regvalue);
 
 	return;
 }
@@ -1914,6 +1845,7 @@ static int fts_enable_edge_limit(struct chip_data_ft3681 *ts_data, int enable)
 
 static int fts_enable_charge_mode(struct chip_data_ft3681 *ts_data, int enable)
 {
+	ts_data->charger_connected = enable;
 	SET_REG(FTS_REG_CHARGER_MODE_EN_BIT, enable);
 	TPD_INFO("MODE_CHARGE, write 0x8B|01=0x%x", ts_data->ctrl_reg_state);
 	return ft3681_fts_write_reg(FTS_REG_CTRL, ts_data->ctrl_reg_state);
@@ -2069,6 +2001,48 @@ mode_err:
 
 static int fts_send_temperature(void *chip_data, int temp, bool normal_mode);
 
+#ifndef CONFIG_ARCH_QTI_VM
+static int get_now_temp(struct chip_data_ft3681 *ts_data)
+{
+	struct touchpanel_data *ts = spi_get_drvdata(ts_data->ft_spi);
+	int result = -40000;
+	int ret = 0;
+
+#ifdef CONFIG_TOUCHPANEL_TRUSTED_TOUCH
+	if (atomic_read(&ts->trusted_touch_enabled) == 1) {
+		TPD_INFO("%s: Trusted touch is already enabled, do not get temp\n", __func__);
+		return ret;
+	}
+#endif
+
+	if (ts->is_suspended) {
+		TPD_INFO("%s : !ts->is_suspended\n", __func__);
+		return ret;
+	}
+
+	ts->oplus_shell_themal = thermal_zone_get_zone_by_name("shell_back");
+
+	if (IS_ERR(ts->oplus_shell_themal)) {
+		TPD_INFO("%s Can't get shell_back\n", __func__);
+		ts->oplus_shell_themal = NULL;
+		ret = -1;
+	}
+
+	TPD_DEBUG("%s get shell_back ret:%d\n", __func__, ret);
+
+	ret = thermal_zone_get_temp(ts->oplus_shell_themal, &result);
+	if (ret < 0)
+		TPD_INFO("%s can't thermal_zone_get_temp, ret=%d\n", __func__, ret);
+
+	result = result / 1000;
+	TPD_INFO("%s : temp is %d\n", __func__, result);
+
+	fts_send_temperature(ts->chip_data, result, true);
+
+	return ret;
+}
+#endif
+
 /*
  * return success: 0; fail : negative
  */
@@ -2078,6 +2052,12 @@ static int fts_reset(void *chip_data)
 
 	TPD_INFO("%s:call\n", __func__);
 	fts_hw_reset(ts_data, RESET_TO_NORMAL_TIME);
+
+	if (ts_data->ts->temperature_detect_shellback_support == true) {
+#ifndef CONFIG_ARCH_QTI_VM
+		get_now_temp(ts_data);
+#endif
+	}
 
 	return 0;
 }
@@ -2353,8 +2333,17 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 	}
 
 	/*confirm need print debug info*/
-	if (touch_buf[0] != ts_data->irq_type) {
+	/*if (touch_buf[0] != ts_data->irq_type) {
 		SET_BIT(result_event, IRQ_FW_HEALTH);
+	}*/
+	ret = ft3681_fts_read_reg(FTS_REG_POINTS, &val);
+	if (ret < 0) {
+		TPD_INFO("%s: read FOD enable(%x) fail", __func__, FTS_REG_POINTS);
+	}
+	if (val) {
+		if (val != 0xFB && val != 0xFF) {
+			SET_BIT(result_event, IRQ_FW_HEALTH);
+		}
 	}
 
 	ts_data->irq_type = touch_buf[0];
@@ -2377,6 +2366,7 @@ static u32 fts_u32_trigger_reason(void *chip_data, int gesture_enable,
 				SET_BIT(result_event, IRQ_FINGERPRINT);
 				TPD_DEBUG("%s, fgerprint, set IRQ_FINGERPRINT when fger down but not reported! \n",
 					  __func__);
+				ts_data->fod_trigger = TYPE_FOD_TRIGGER;
 			}
 
 			/*            if (ts_data->fod_info.fp_down_report) {      38, 1, 1*/
@@ -2418,7 +2408,7 @@ static int fts_get_touch_points(void *chip_data, struct point_info *points,
 
 	if (finger_num > max_num) {
 		TPD_INFO("invalid point_num(%d),max_num(%d)", finger_num, max_num);
-		return -EINVAL;
+		return -EIO;
 	}
 
 	if (ts_data->snr_read_support) {
@@ -2457,6 +2447,20 @@ static int fts_get_touch_points(void *chip_data, struct point_info *points,
 			points[pointid].width_major = (touch_buf[7 + base_position] & 0x7F);
 			points[pointid].z =  (touch_buf[7 + base_position] & 0x7F);
 
+			if (ft3681_grip_v2_support) {
+				if (pointid < 7) {
+					points[pointid].tx_press = touch_buf[62 + base_prevent];
+					points[pointid].rx_press = touch_buf[63 + base_prevent];
+					points[pointid].tx_er = touch_buf[65 + base_prevent];
+					points[pointid].rx_er = touch_buf[64 + base_prevent];
+				} else {
+					points[pointid].tx_press = 0;
+					points[pointid].rx_press = 0;
+					points[pointid].tx_er = 0;
+					points[pointid].rx_er = 0;
+				}
+			}
+
 			TPD_DEBUG("[prevent-ft] x:%3d y:%3d | tx_press:%3d rx_press:%3d tx_er:%3d rx_er:%3d", points[pointid].x, points[pointid].y, points[pointid].tx_press,
 				points[pointid].rx_press, points[pointid].tx_er, points[pointid].rx_er);
 
@@ -2475,6 +2479,20 @@ static int fts_get_touch_points(void *chip_data, struct point_info *points,
 			points[pointid].touch_major = (touch_buf[7 + base_position] & 0x7F);
 			points[pointid].width_major = (touch_buf[7 + base_position] & 0x7F);
 			points[pointid].z =  (touch_buf[7 + base_position] & 0x7F);
+
+			if (ft3681_grip_v2_support) {
+				if (pointid < 7) {
+					points[pointid].tx_press = touch_buf[62 + base_prevent];
+					points[pointid].rx_press = touch_buf[63 + base_prevent];
+					points[pointid].tx_er = touch_buf[65 + base_prevent];
+					points[pointid].rx_er = touch_buf[64 + base_prevent];
+				} else {
+					points[pointid].tx_press = 0;
+					points[pointid].rx_press = 0;
+					points[pointid].tx_er = 0;
+					points[pointid].rx_er = 0;
+				}
+			}
 
 			TPD_DEBUG("[prevent-ft] x:%3d y:%3d | tx_press:%3d rx_press:%3d tx_er:%3d rx_er:%3d", points[pointid].x, points[pointid].y, points[pointid].tx_press,
 				points[pointid].rx_press, points[pointid].tx_er, points[pointid].rx_er);
@@ -2505,14 +2523,27 @@ static int fts_get_touch_points(void *chip_data, struct point_info *points,
 
 			if (finger_num == 0) {
 				TPD_INFO("abnormal touch data from fw");
-				return -EINVAL;
+				return -EIO;
 			}
+		}
+	}
+
+	if (!obj_attention) {
+		if (ts_data->is_in_water) {
+			ts_data->is_in_water = false;
+		}
+
+		if (ts_data->fod_trigger) {
+			if (ts_data->fod_trigger == TYPE_SMALL_FOD_TRIGGER) {
+				tp_healthinfo_report(ts_data->monitor_data, HEALTH_REPORT, HEALTH_REPORT_FOD_ABNORMAL);
+			}
+			ts_data->fod_trigger = TYPE_NO_FOD_TRIGGER;
 		}
 	}
 
 	if (event_num == 0) {
 		TPD_INFO("no touch point information");
-		return -EINVAL;
+		return -EIO;
 	}
 
 
@@ -2523,13 +2554,72 @@ static void fts_health_report(void *chip_data, struct monitor_data *mon_data)
 {
 	int ret = 0;
 	u8 val = 0;
+	char *freq_str = NULL;
+	struct chip_data_ft3681 *ts_data = (struct chip_data_ft3681 *)chip_data;
 
-	ret = ft3681_fts_read_reg(0x01, &val);
-	TPD_INFO("Health register(0x01):0x%x", val);
 	ret = ft3681_fts_read_reg(FTS_REG_HEALTH_1, &val);
 	TPD_INFO("Health register(0xFD):0x%x", val);
 	ret = ft3681_fts_read_reg(FTS_REG_HEALTH_2, &val);
 	TPD_INFO("Health register(0xFE):0x%x", val);
+
+	ret = ft3681_fts_read_reg(0x01, &val);
+	if ((val & 0x01) && !ts_data->is_in_water) {
+		TPD_DETAIL("Health register(0x01):Water Shield");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_SHIELD_WATER);
+		ts_data->is_in_water = true;
+	}
+	if (val & 0x02) {
+		TPD_DETAIL("Health register(0x01):Palm Shield");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_SHIELD_PALM);
+	}
+	if (val & 0x04) {
+		TPD_DETAIL("Health register(0x01):Freq Hopping");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_HOPPING);
+	}
+	if (val & 0x08) {
+		TPD_DETAIL("Health register(0x01):Base Refresh");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_BASELINE_ERR);
+	}
+	if (val & 0x10) {
+		if (ts_data->charger_connected) {
+			TPD_DETAIL("Health register(0x01):Big Noise in Charge");
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_NOISE_CHARGE);
+		} else {
+			TPD_DETAIL("Health register(0x01):Big Noise");
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_NOISE);
+		}
+	}
+	if (val & 0x20) {
+		TPD_DETAIL("Health register(0x01):Temperature");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_TEMP_DRIFT);
+	}
+	if (val & 0x40) {
+		TPD_DETAIL("Health register(0x01):Chanel Fill");
+		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_CHANEL_FILL);
+	}
+	if (val & 0x80) {
+		if (!ts_data->fod_trigger) {
+			TPD_DETAIL("Health register(0x01):FOD");
+			ts_data->fod_trigger = TYPE_SMALL_FOD_TRIGGER;
+		}
+	}
+
+	ret = ft3681_fts_read_reg(FTS_REG_HEALTH_2, &val);
+	if (ret < 0) {
+		TPD_INFO("%s: read FTS_REG_HEALTH_2 (%x) fail", __func__, FTS_REG_HEALTH_2);
+	}
+	TPD_INFO("Health register(0xFE):0x%x(work-freq:%d)", val, val);
+	if (mon_data->work_freq && mon_data->work_freq != val) {
+		freq_str = kzalloc(10, GFP_KERNEL);
+		if (!freq_str) {
+			TPD_INFO("freq_str kzalloc failed.\n");
+		} else {
+			snprintf(freq_str, 10, "freq_%d", val);
+			tp_healthinfo_report(mon_data, HEALTH_REPORT, freq_str);
+			kfree(freq_str);
+		}
+	}
+	mon_data->work_freq = val;
 }
 
 static int fts_get_gesture_info(void *chip_data, struct gesture_info *gesture)
@@ -3006,7 +3096,6 @@ static void fts_get_rawdata_snr(struct chip_data_ft3681 *ts_data)
 	int raw_num = tx_num * rx_num;
 	int sc_num = tx_num + rx_num;
 	int j = 0;
-	int offect = 0;
 	u8 *touch_buf = ts_data->snr_buf;
 
 	for (j = 0; j < 10; j = j + 1) {
@@ -3019,22 +3108,19 @@ static void fts_get_rawdata_snr(struct chip_data_ft3681 *ts_data)
 	}
 
 	ts_data->snr_count = touch_buf[103];
-	offect = 104;
 	for (j = 0; j < raw_num; j = j + 1) {
-		ts_data->diff_buf[j] = (int)(short)((touch_buf[offect + 2*j] << 8) +
-				(touch_buf[offect + 2*j + 1]));
+		ts_data->diff_buf[j] = (int)(short)((touch_buf[104 + 2*j] << 8) +
+				(touch_buf[104 + 2*j + 1]));
 	}
 
-	offect += 2 * raw_num;
 	for (j = 0; j < sc_num; j = j + 1) {
-		ts_data->sc_water[j] = (int)(short)((touch_buf[offect + 2*j] << 8) +
-				(touch_buf[offect + 2*j + 1]));
+		ts_data->sc_water[j] = (int)(short)((touch_buf[104 + 2 * raw_num + 2*j] << 8) +
+				(touch_buf[104 + 2 * raw_num + 2*j + 1]));
 	}
 
-	offect += 2 * sc_num + 40;
 	for (j = 0; j < sc_num; j = j + 1) {
-		ts_data->sc_nomal[j] = (int)(short)((touch_buf[offect + 2*j] << 8) +
-				(touch_buf[offect + 2*j + 1]));
+		ts_data->sc_nomal[j] = (int)(short)((touch_buf[104 + 2 * raw_num + 2 * sc_num + 2*j] << 8) +
+				(touch_buf[104 + 2 * raw_num + 2 * sc_num + 2*j + 1]));
 	}
 	ts_data->snr_data_is_ready = 0;
 }
@@ -3042,7 +3128,6 @@ static void fts_get_rawdata_snr(struct chip_data_ft3681 *ts_data)
 static void fts_delta_snr_read(struct seq_file *s, void *chip_data, uint32_t count)
 {
 	struct chip_data_ft3681 *ts_data = (struct chip_data_ft3681 *)chip_data;
-	struct touchpanel_data *ts = spi_get_drvdata(ts_data->ft_spi);
 	int rx_num = ts_data->hw_res->rx_num;
 	struct touchpanel_snr *snr = ts_data->ts->snr;
 	int j = 0;
@@ -3063,27 +3148,25 @@ static void fts_delta_snr_read(struct seq_file *s, void *chip_data, uint32_t cou
 		return;
 	}
 
+	ts_data->ts->kernel_grip_support = 0;
+	TPD_INFO("%s:close kernel grip support success", __func__);
+
 	ret = ft3681_fts_write_reg(FTS_REG_WORK_MODE, FTS_REG_WORK_MODE_SNR_MODE);
 	if (ret < 0) {
 			TPD_INFO("%s:open fastdiff fail", __func__);
 			return;
 	}
 	TPD_INFO("%s:open fastdiff test success", __func__);
-	mutex_unlock(&ts->mutex);
-	if (ts->int_mode == BANNABLE) {
-		enable_irq(ts->irq);
-	}
-	msleep(2000);     /* wait for tp ic frequency hopping */
-	ts_data->snr_is_reading = 1;
-	ts_data->snr_data_is_ready = 0;
 	msleep(50);
+	ts_data->snr_is_reading = 1;
+	msleep(10);
 
 	for (i = 0; i < count; i++) {
 		for (j = 0; j < 10; j++) {
 			msleep(5);
 			fts_get_rawdata_snr(ts_data);
 			if (snr_count != ts_data->snr_count && ts_data->snr_count != 255 \
-				&& ts_data->diff_buf[rx_num * snr[0].channel_x + snr[0].channel_y] > 100) {
+				&& ts_data->diff_buf[rx_num * snr[0].channel_x + snr[0].channel_y] > 0) {
 				snr_count = ts_data->snr_count;
 				data_reay = 1;
 				TPD_INFO("%s:snr_count update,snr_count:%u,diff_buf:%d.", __func__, ts_data->snr_count, \
@@ -3100,7 +3183,7 @@ static void fts_delta_snr_read(struct seq_file *s, void *chip_data, uint32_t cou
 			for (j = 0; j < 10; j++) {
 				if (snr[j].point_status) {
 					diff_data = ts_data->diff_buf[rx_num * snr[j].channel_x + snr[j].channel_y];
-					if (i && (snr[j].max != 0 || snr[j].min != 0)) {
+					if (i) {
 						snr[j].max = diff_data > snr[j].max ? diff_data : snr[j].max;
 						snr[j].min = diff_data < snr[j].min ? diff_data : snr[j].min;
 					} else {
@@ -3120,19 +3203,17 @@ static void fts_delta_snr_read(struct seq_file *s, void *chip_data, uint32_t cou
 
 	msleep(10);
 	ts_data->snr_is_reading = 0;
-	mutex_lock(&ts->mutex);
+	msleep(10);
 	ret = ft3681_fts_write_reg(FTS_REG_WORK_MODE, FTS_REG_WORK_MODE_NORMAL_MODE);
 	if (ret < 0) {
 			TPD_INFO("%s:close fastdiff fail", __func__);
 			return;
 	}
 	TPD_INFO("%s:close fastdiff test success", __func__);
-	mutex_unlock(&ts->mutex);
-	msleep(30);
-	if (ts->int_mode == BANNABLE) {
-		disable_irq_nosync(ts->irq);
-	}
-	mutex_lock(&ts->mutex);
+
+	ts_data->ts->kernel_grip_support = 1;
+
+	TPD_INFO("%s:open kernel grip support success", __func__);
 	TPD_INFO("%s:test set count = %u, real test count = %u", __func__, count, real_count);
 
 	if (real_count != 0) {
@@ -3392,7 +3473,7 @@ static struct debug_info_proc_operations fts_debug_info_proc_ops = {
 	.delta_read        = fts_delta_read,
 	.baseline_read = fts_baseline_read,
 	.main_register_read = fts_main_register_read,
-/*	.self_delta_read   = fts_self_delta_read,  */
+	.self_delta_read   = fts_self_delta_read,
 	.delta_snr_read    = fts_delta_snr_read,
 };
 

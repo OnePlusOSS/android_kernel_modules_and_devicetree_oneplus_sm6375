@@ -146,7 +146,7 @@ void sec_raw_device_init(struct touchpanel_data *ts)
 
 	} else {
 		snprintf(name, sizeof(name), "%s", "sec");
-		snprintf(dev_name, sizeof(dev_name), "%s%d", "sec_ts", ts->tp_index);
+		snprintf(dev_name, sizeof(dev_name), "%s%x", "sec_ts", ts->tp_index);
 	}
 
 	sec_class = class_create(THIS_MODULE, name);
@@ -235,6 +235,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 	uint32_t *p_data32 = NULL;
 	uint32_t item_cnt = 0;
 	uint32_t i = 0;
+	int support_item = 0;
 
 	struct test_item_info *p_test_item_info = NULL;
 	struct sec_auto_test_operations *sec_test_ops = NULL;
@@ -345,6 +346,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 			error_count++;
 			goto ERR_OUT;
 		}
+		support_item++;
 	}
 
 	tp_kfree((void **)&p_test_item_info);
@@ -363,6 +365,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 			error_count++;
 			goto ERR_OUT;
 		}
+		support_item++;
 	}
 
 	tp_kfree((void **)&p_test_item_info);
@@ -381,6 +384,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 			error_count++;
 			goto ERR_OUT;
 		}
+		support_item++;
 	}
 
 	tp_kfree((void **)&p_test_item_info);
@@ -399,6 +403,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 			error_count++;
 			goto ERR_OUT;
 		}
+		support_item++;
 	}
 
 	tp_kfree((void **)&p_test_item_info);
@@ -417,6 +422,7 @@ int sec_auto_test(struct seq_file *s,  struct touchpanel_data *ts)
 			error_count++;
 			goto ERR_OUT;
 		}
+		support_item++;
 	}
 
 ERR_OUT:
@@ -428,6 +434,9 @@ ERR_OUT:
 	} else {
 		sec_test_ops->sec_auto_test_endoperation(s, ts->chip_data, &sec_testdata,
 				p_test_item_info);
+	}
+	if (!support_item) {
+		error_count++;
 	}
 
 	seq_printf(s, "FW:0x%llx\n", sec_testdata.tp_fw);
@@ -535,7 +544,7 @@ static ssize_t proc_curved_control_read(struct file *file,
 		return count;
 	}
 
-	sprintf(page, "%u\n", sec_ops->get_curved_rejsize(ts->chip_data));
+	sprintf(page, "%d\n", sec_ops->get_curved_rejsize(ts->chip_data));
 	ret = simple_read_from_buffer(user_buf, count, ppos, page, strlen(page));
 
 	return ret;

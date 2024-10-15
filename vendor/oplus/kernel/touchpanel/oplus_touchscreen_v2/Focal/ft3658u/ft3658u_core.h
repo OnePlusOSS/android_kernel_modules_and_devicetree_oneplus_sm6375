@@ -30,9 +30,9 @@
 
 #define FTS_REG_SMOOTH_LEVEL                    0x85
 #define FTS_REG_GAME_MODE_EN                    0xC3
-#define FTS_REG_REPORT_RATE                     0x88/*0x12:180hz, 0x0C:120hz*/
 #define FTS_REG_HIGH_FRAME_EN                   0x8E
 #define FTS_REG_HIGH_FRAME_TIME                 0x8A
+#define FTS_REG_REPORT_RATE                     0x88/*0x12:180hz, 0x0C:120hz*/
 #define FTS_REG_CHARGER_MODE_EN                 0x8B
 #define FTS_REG_EDGE_LIMIT                      0x8C
 #define FTS_REG_SENSITIVE_LEVEL                 0xBA
@@ -158,6 +158,7 @@ struct fts_autotest_offset {
 	int32_t *fts_scap_raw_data_N;
 	int32_t *fts_scap_raw_waterproof_data_P;
 	int32_t *fts_scap_raw_waterproof_data_N;
+
 };
 
 
@@ -252,6 +253,7 @@ int ft3658u_short_test(struct seq_file *s, void *chip_data,
                        struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info);
 int ft3658u_auto_endoperation(struct seq_file *s, void *chip_data,
                               struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info);
-
-
+int ft3658u_rst_autotest(struct seq_file *s, void *chip_data,
+                                  struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info);
+int ft3658u_rstpin_reset(void *chip_data);
 #endif /*__FT3658U_CORE_H__*/

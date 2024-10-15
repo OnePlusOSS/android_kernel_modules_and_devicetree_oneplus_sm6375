@@ -104,18 +104,11 @@ static ssize_t nvt_flash_read(struct file *filp, char __user *buff,
 	}
 }
 
-#if LINUX_VERSION_CODE>= KERNEL_VERSION(5, 10, 0)
-static const struct proc_ops nvt_flash_fops = {
-	.proc_open = simple_open,
-    .proc_read = nvt_flash_read,
-};
-#else
 static const struct file_operations nvt_flash_fops = {
 	.owner = THIS_MODULE,
-    .open = simple_open,
-    .read = nvt_flash_read,
+	.open = simple_open,
+	.read = nvt_flash_read,
 };
-#endif
 
 static ssize_t nvt_noflash_read(struct file *filp, char __user *buff,
 				size_t count, loff_t *offp)
@@ -168,7 +161,7 @@ static ssize_t nvt_noflash_read(struct file *filp, char __user *buff,
 	}
 
 	memcpy(buf, &str[2], rw_len);
-
+	buf[strlen(buf)] = '\0';
 	if (spi_wr == 0) {    /*SPI write*/
 		while (retries < 20) {
 			ret = CTP_SPI_WRITE(ts->s_client, buf, rw_len);
@@ -238,18 +231,44 @@ out:
 	return ret;
 }
 
-#if LINUX_VERSION_CODE>= KERNEL_VERSION(5, 10, 0)
-static const struct proc_ops nvt_noflash_fops = {
-	.proc_open = simple_open,
-    .proc_read = nvt_noflash_read,
-};
-#else
 static const struct file_operations nvt_noflash_fops = {
 	.owner = THIS_MODULE,
-    .open = simple_open,
-    .read = nvt_noflash_read,
+	.open = simple_open,
+	.read = nvt_noflash_read,
 };
-#endif
+
+/*nvt mode change debug - For incell ic black screen test*/
+static ssize_t proc_nvt_mode_write(struct file *file,
+		const char __user *buffer, size_t count, loff_t *ppos)
+{
+	int value = 0;
+	char buf[8] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		return count;
+	}
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 8);
+
+	if (kstrtoint(buf, 10, &value)) {
+		TP_INFO(ts->tp_index, "%s: kstrtoint error\n", __func__);
+		return count;
+	}
+
+	TP_INFO(ts->tp_index, "%s mode:%d En:%d\n", __func__, value/10, !!(value%10));
+
+	ts->ts_ops->mode_switch(ts->chip_data, value/10, !!(value%10));
+
+	return count;
+}
+
+static const struct file_operations nvt_mode_switch_ops = {
+	.owner = THIS_MODULE,
+	.open  = simple_open,
+	.write = proc_nvt_mode_write,
+};
+
 
 void nvt_flash_proc_init(struct touchpanel_data *ts, const char *name)
 {
@@ -258,6 +277,18 @@ void nvt_flash_proc_init(struct touchpanel_data *ts, const char *name)
 	if (strstr(name, "SPI")) {
 		TPD_INFO("create /proc/NVTSPI!\n");
 		nvt_proc_entry = proc_create_data(name, 0444, NULL, &nvt_noflash_fops, ts);
+
+		if (nvt_proc_entry == NULL) {
+			TPD_INFO("%s Failed!\n", __func__);
+			return;
+
+		} else {
+			TPD_INFO("%s Succeeded!\n", __func__);
+		}
+
+	} else if (strstr(name, "ModeSet")) {
+		TPD_INFO("create /proc/%s!\n", name);
+		nvt_proc_entry = proc_create_data(name, 0664, NULL, &nvt_mode_switch_ops, ts);
 
 		if (nvt_proc_entry == NULL) {
 			TPD_INFO("%s Failed!\n", __func__);
@@ -500,6 +531,7 @@ void nvt_limit_read_std(struct seq_file *s, struct touchpanel_data *ts)
 
 	release_firmware(fw);
 }
+EXPORT_SYMBOL(nvt_limit_read_std);
 /************ nvt auto test content*************************/
 
 

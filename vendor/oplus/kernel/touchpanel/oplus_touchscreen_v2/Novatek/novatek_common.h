@@ -80,14 +80,32 @@ struct nvt_test_header {
 	unsigned int   array_fdm_diff_n_offset;
 	unsigned int   array_fdm_rawdata_p_offset;
 	unsigned int   array_fdm_rawdata_n_offset;
+
+#ifdef CONFIG_TOUCHPANEL_NT_PEN_SUPPORT
+	unsigned int   array_pen_tip_x_data_p_offset;
+	unsigned int   array_pen_tip_x_data_n_offset;
+	unsigned int   array_pen_tip_y_data_p_offset;
+	unsigned int   array_pen_tip_y_data_n_offset;
+	unsigned int   array_pen_ring_x_data_p_offset;
+	unsigned int   array_pen_ring_x_data_n_offset;
+	unsigned int   array_pen_ring_y_data_p_offset;
+	unsigned int   array_pen_ring_y_data_n_offset;
+	unsigned int   array_pen_tip_x_diff_p_offset;
+	unsigned int   array_pen_tip_x_diff_n_offset;
+	unsigned int   array_pen_tip_y_diff_p_offset;
+	unsigned int   array_pen_tip_y_diff_n_offset;
+	unsigned int   array_pen_ring_x_diff_p_offset;
+	unsigned int   array_pen_ring_x_diff_n_offset;
+	unsigned int   array_pen_ring_y_diff_p_offset;
+	unsigned int   array_pen_ring_y_diff_n_offset;
+#endif
 	/*reserve space*/
 	signed int   reserve[16];
 };
 
 /*********PART3:Struct Area**********************/
 struct nvt_proc_operations {
-	void (*auto_test)(struct seq_file *s, void *chip_data,
-			  struct nvt_testdata *nvt_testdata);
+	void (*auto_test)(struct seq_file *s, void *chip_data, struct nvt_testdata *nvt_testdata);
 };
 
 
@@ -164,6 +182,23 @@ struct nvt_autotest_offset {
 	int32_t *fdm_rawdata_n;
 	int32_t *fdm_diff_rawdata_p;
 	int32_t *fdm_diff_rawdata_n;
+
+	int32_t *pen_tip_x_data_p;
+	int32_t *pen_tip_x_data_n;
+	int32_t *pen_tip_y_data_p;
+	int32_t *pen_tip_y_data_n;
+	int32_t *pen_ring_x_data_p;
+	int32_t *pen_ring_x_data_n;
+	int32_t *pen_ring_y_data_p;
+	int32_t *pen_ring_y_data_n;
+	int32_t *pen_tip_x_noise_data_p;
+	int32_t *pen_tip_x_noise_data_n;
+	int32_t *pen_tip_y_noise_data_p;
+	int32_t *pen_tip_y_noise_data_n;
+	int32_t *pen_ring_x_noise_data_p;
+	int32_t *pen_ring_x_noise_data_n;
+	int32_t *pen_ring_y_noise_data_p;
+	int32_t *pen_ring_y_noise_data_n;
 };
 
 struct nvt_auto_test_operations {
@@ -233,6 +268,14 @@ enum {
 	TYPE_FDM_RAWDATA                        = 0x0A,
 	TYPE_FDM_DIFF_RAWDATA                   = 0x0B,
 	TYPE_DIGITAL_DIFF                       = 0x0C,
+	TYPE_PEN_X_TIP                          = 0x0D,
+	TYPE_PEN_Y_TIP                          = 0x0E,
+	TYPE_PEN_X_RING                         = 0x0F,
+	TYPE_PEN_Y_RING                         = 0x10,
+	TYPE_PEN_X_TIP_NOISE                    = 0x11,
+	TYPE_PEN_Y_TIP_NOISE                    = 0x12,
+	TYPE_PEN_X_RING_NOISE                   = 0x13,
+	TYPE_PEN_Y_RING_NOISE                   = 0x14,
 	TYPE_MAX                                = 0xFF,
 };
 

@@ -20,7 +20,8 @@
 #include "../touchpanel_common.h"
 #include "../touch_comon_api/touch_comon_api.h"
 #include "../touchpanel_autotest/touchpanel_autotest.h"
-
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
+#include "../touchpanel_healthinfo/touchpanel_exception.h"
 
 #include "synaptics_firmware_v2.h"
 
@@ -42,6 +43,16 @@ typedef enum {
 	BASE_RXABS_BASELINE = 0x10,
 	BASE_TXABS_BASELINE = 0x20,
 } BASELINE_ERR;
+
+typedef enum {
+	BASE_V2_NO_ERROR = 0x00,
+	BASE_V2_CLASSIFIER_BL = 0x01,
+	BASE_V2_ABS_POSITIVITY_TX = 0x02,
+	BASE_V2_ABS_POSITIVITY_RX = 0x03,
+	BASE_V2_ENERGY_RATIO = 0x04,
+	BASE_V2_BUMPINESS = 0x05,
+	BASE_V2_NEGTIVE_FINGER = 0x06,
+} BASELINE_ERR_V2; /* used by S3910 */
 
 typedef enum {
 	SHIELD_PALM = 0x01,
@@ -228,6 +239,12 @@ struct syna_auto_test_operations {
 	int (*syna_auto_test_endoperation)(struct seq_file *s, void *chip_data,
 					   struct auto_testdata *syna_testdata,
 					   struct test_item_info *p_test_item_info);
+	int (*syna_black_screen_test_noise)(struct seq_file *s, void *chip_data,
+					   struct auto_testdata *syna_testdata,
+					   struct test_item_info *p_test_item_info);
+	int (*syna_black_screen_test_dynamic)(struct seq_file *s, void *chip_data,
+					   struct auto_testdata *syna_testdata,
+					   struct test_item_info *p_test_item_info);
 };
 
 int  synaptics_create_proc(struct touchpanel_data *ts,
@@ -239,5 +256,7 @@ void synaptics_parse_header(struct image_header_data *header,
 int synaptics_parse_header_v2(struct image_info *image_info,
 			      const unsigned char *fw_image);
 int synaptics_auto_test(struct seq_file *s,  struct touchpanel_data *ts);
+int synaptics_black_screen_test(struct black_gesture_test *p,
+			      struct touchpanel_data *ts);
 
 #endif  /*SYNAPTICS_H*/

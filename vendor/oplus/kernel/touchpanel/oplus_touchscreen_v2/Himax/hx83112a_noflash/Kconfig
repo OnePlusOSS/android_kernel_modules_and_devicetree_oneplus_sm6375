@@ -4,9 +4,8 @@
 config TOUCHPANEL_HIMAX_HX83112A_NOFLASH
 #	default y
 	tristate "TP himax hx83112a no-flash IC enable or not for OPLUS"
-	help
-	Say Y to enable driver for Touchpanel useing himax hx83112a no-flash
-	Say M to enable driver for Touchpanel useing himax hx83112a no-flash as module
+	---help---
+	say Y to enable driver for Touchpanel useing himax hx83112a no-flash
 
 #endif
 

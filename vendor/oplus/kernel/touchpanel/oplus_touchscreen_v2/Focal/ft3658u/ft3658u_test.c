@@ -5,6 +5,7 @@
 
 #include <linux/delay.h>
 #include "ft3658u_core.h"
+
 /*******Part0:LOG TAG Declear********************/
 
 #ifdef TPD_DEVICE
@@ -13,28 +14,35 @@
 #else
 #define TPD_DEVICE "ft3658u-test"
 #endif
+#define TPD_INFO(a, arg...)  pr_err("[TP]"TPD_DEVICE ": " a, ##arg)
+#define TPD_DEBUG(a, arg...)\
+    do{\
+        if (LEVEL_DEBUG == tp_debug)\
+            pr_err("[TP]"TPD_DEVICE ": " a, ##arg);\
+    }while(0)
 
 
-#define FTS_TEST_FUNC_ENTER() do {\
-	TPD_INFO("[FTS_TS][TEST]%s: Enter\n", __func__);\
+#define FTS_TEST_FUNC_ENTER() do { \
+    TPD_INFO("[FTS_TS][TEST]%s: Enter\n", __func__); \
 } while (0)
 
-#define FTS_TEST_FUNC_EXIT()  do {\
-	TPD_INFO("[FTS_TS][TEST]%s: Exit(%d)\n", __func__, __LINE__);\
+#define FTS_TEST_FUNC_EXIT()  do { \
+    TPD_INFO("[FTS_TS][TEST]%s: Exit(%d)\n", __func__, __LINE__); \
 } while (0)
 
-#define FTS_TEST_SAVE_INFO(fmt, args...) do {\
-	if (g_fts3658u_data->s) {\
-        seq_printf(g_fts3658u_data->s, fmt, ##args);\
-	}\
-	TPD_INFO(fmt, ##args);\
+
+#define FTS_TEST_SAVE_INFO(fmt, args...) do { \
+    if (g_fts3658u_data->s) { \
+        seq_printf(g_fts3658u_data->s, fmt, ##args); \
+    } \
+    TPD_INFO(fmt, ##args); \
 } while (0)
 
-#define FTS_TEST_SAVE_ERR(fmt, args...)  do {\
-	if (g_fts3658u_data->s) {\
-        seq_printf(g_fts3658u_data->s, fmt, ##args);\
-	}\
-	TPD_INFO(fmt, ##args);\
+#define FTS_TEST_SAVE_ERR(fmt, args...)  do { \
+    if (g_fts3658u_data->s) { \
+        seq_printf(g_fts3658u_data->s, fmt, ##args); \
+    } \
+    TPD_INFO(fmt, ##args); \
 } while (0)
 
 #define SHORT_MIN_CA                    600
@@ -70,48 +78,6 @@ static void sys_delay(int ms)
 	msleep(ms);
 }
 
-static void print_buffer(int *buffer, int length, int line_num)
-{
-	int i = 0;
-	int j = 0;
-	int tmpline = 0;
-	char *tmpbuf = NULL;
-	int tmplen = 0;
-	int cnt = 0;
-
-	if ((NULL == buffer) || (length <= 0)) {
-		TPD_INFO("buffer/length(%d) fail", length);
-		return;
-	}
-
-	tmpline = line_num ? line_num : length;
-	tmplen = tmpline * 6 + 128;
-	tmpbuf = kzalloc(tmplen, GFP_KERNEL);
-
-	if (!tmpbuf) {
-		TPD_INFO("%s, alloc failed \n", __func__);
-		return;
-	}
-
-	for (i = 0; i < length; i = i + tmpline) {
-		cnt = 0;
-
-		for (j = 0; j < tmpline; j++) {
-			cnt += snprintf(tmpbuf + cnt, tmplen - cnt, "%5d ", buffer[i + j]);
-
-			if ((cnt >= tmplen) || ((i + j + 1) >= length)) {
-				break;
-			}
-		}
-
-		TPD_DEBUG("%s", tmpbuf);
-	}
-
-	if (tmpbuf) {
-		kfree(tmpbuf);
-		tmpbuf = NULL;
-	}
-}
 
 #ifdef FTS_KIT
 /**
@@ -316,6 +282,7 @@ static int fts_test_read(u8 addr, u8 *readbuf, int readlen)
 		if ((i == (packet_num - 1)) && packet_remainder) {
 			packet_length = packet_remainder;
 		}
+
 
 		ret = fts_test_bus_read(NULL, 0, &readbuf[offset],
 		                        packet_length);
@@ -1004,7 +971,8 @@ static void ft3658u_get_null_noise(struct chip_data_ft3658u *ts_data,
 	null_noise = NULL;
 }
 
-static void ft3658u_autotest_populate_result_head(struct chip_data_ft3658u *ts_data, struct auto_testdata *p_testdata)
+static void ft3658u_autotest_populate_result_head(
+    struct chip_data_ft3658u *ts_data, struct auto_testdata *p_testdata)
 {
 	uint8_t  data_buf[256];
 	uint32_t buflen = 0;
@@ -1194,8 +1162,48 @@ alloc_err:
 }
 
 
+int ft3658u_rst_autotest(struct seq_file *s, void *chip_data,
+                                  struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info)
+{
+	int ret = 0;
+	u8 val = 0;
+	u8 val2 = 0;
+	u8 val3 = 0;
+	struct chip_data_ft3658u *ts_data = (struct chip_data_ft3658u *)chip_data;
 
+	FTS_TEST_FUNC_ENTER();
+	FTS_TEST_SAVE_INFO("\n============ Test Item: Reset Test\n");
 
+	enter_work_mode();
+
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
+	val2 = val - 1;
+	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
+	ft3658u_rstpin_reset((void*)ts_data);
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
+	TPD_INFO("one: reset test: val = %d, val3 = %d", val, val3);
+
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
+	val2 = val - 1;
+	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
+	ft3658u_rstpin_reset((void*)ts_data);
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
+	TPD_INFO("two: reset test: val = %d, val3 = %d", val, val3);
+
+	if (val3 != val) {
+		FTS_TEST_SAVE_ERR("check reg to test rst failed.\n");
+		ret = -1;
+	}
+
+	if (!ret) {
+		FTS_TEST_SAVE_INFO("------Reset Test PASS\n");
+	} else {
+		FTS_TEST_SAVE_INFO("------Reset Test NG\n");
+	}
+
+	FTS_TEST_FUNC_EXIT();
+	return ret;
+}
 
 
 int ft3658u_rawdata_autotest(struct seq_file *s, void *chip_data,
@@ -1223,7 +1231,7 @@ int ft3658u_rawdata_autotest(struct seq_file *s, void *chip_data,
 		return 0;
 	}
 
-	if (!ts_data->rawdata || !ts_data->node_valid) {
+	if (!ts_data->rawdata || !ts_data->node_valid ) {
 		FTS_TEST_SAVE_ERR("rawdata is null\n");
 		ret = -EINVAL;
 		goto test_err;
@@ -2430,6 +2438,7 @@ static int fts_get_threshold_from_img(struct chip_data_ft3658u *ts_data,
 					TPD_INFO("fts_uniformity_data_P = %p, fts_uniformity_data_N = %p \n",
 					         ts_data->fts_autotest_offset->fts_uniformity_data_P,
 					         ts_data->fts_autotest_offset->fts_uniformity_data_N);
+
 				}
 
 			} else if (true == ts_data->use_panelfactory_limit) {
@@ -2461,6 +2470,7 @@ static int fts_get_threshold_from_img(struct chip_data_ft3658u *ts_data,
 					TPD_INFO("fts_uniformity_data_P = %p, fts_uniformity_data_P = %p \n",
 					         ts_data->fts_autotest_offset->fts_uniformity_data_P,
 					         ts_data->fts_autotest_offset->fts_uniformity_data_N);
+
 				}
 			}
 
@@ -2607,7 +2617,7 @@ int fts3658u_test_entry(struct chip_data_ft3658u *ts_data,
 
 	/*set node valid*/
 	for (i = 0; i < node_num; i++) {
-		ts_data->node_valid[i] = 1;
+		ts_data->node_valid [i] = 1;
 	}
 
 	for (i = 0; i < channel_num; i++) {

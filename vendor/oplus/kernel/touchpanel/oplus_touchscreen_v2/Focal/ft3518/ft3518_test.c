@@ -15,26 +15,31 @@
 #define TPD_DEVICE "ft3518-test"
 #endif
 
-#define FTS_TEST_FUNC_ENTER() do {\
-	TPD_INFO("[FTS_TS][TEST]%s: Enter\n", __func__);\
+
+
+#define FTS_TEST_FUNC_ENTER() do { \
+	TPD_INFO("[FTS_TS][TEST]%s: Enter\n", __func__); \
 } while (0)
 
-#define FTS_TEST_FUNC_EXIT()  do {\
-	TPD_INFO("[FTS_TS][TEST]%s: Exit(%d)\n", __func__, __LINE__);\
+#define FTS_TEST_FUNC_EXIT()  do { \
+	TPD_INFO("[FTS_TS][TEST]%s: Exit(%d)\n", __func__, __LINE__); \
 } while (0)
 
-#define FTS_TEST_SAVE_INFO(fmt, args...) do {\
-	if (g_fts_data->s) {\
-        seq_printf(g_fts_data->s, fmt, ##args);\
-	}\
+
+#define FTS_TEST_SAVE_INFO(fmt, args...) do { \
+	if (g_fts_data->s) { \
+        seq_printf(g_fts_data->s, fmt, ##args); \
+	} \
 } while (0)
 
-#define FTS_TEST_SAVE_ERR(fmt, args...)  do {\
-	if (g_fts_data->s) {\
-        seq_printf(g_fts_data->s, fmt, ##args);\
-	}\
-	TPD_INFO(fmt, ##args);\
+#define FTS_TEST_SAVE_ERR(fmt, args...)  do { \
+	if (g_fts_data->s) { \
+        seq_printf(g_fts_data->s, fmt, ##args); \
+	} \
+	TPD_INFO(fmt, ##args); \
 } while (0)
+
+
 
 enum wp_type {
 	WATER_PROOF_OFF = 0,
@@ -63,59 +68,6 @@ static void sys_delay(int ms)
 {
 	msleep(ms);
 }
-
-int focal_abs(int value)
-{
-	if (value < 0) {
-		value = 0 - value;
-	}
-
-	return value;
-}
-
-static void print_buffer(int *buffer, int length, int line_num)
-{
-	int i = 0;
-	int j = 0;
-	int tmpline = 0;
-	char *tmpbuf = NULL;
-	int tmplen = 0;
-	int cnt = 0;
-
-	if ((NULL == buffer) || (length <= 0)) {
-		TPD_INFO("buffer/length(%d) fail", length);
-		return;
-	}
-
-	tmpline = line_num ? line_num : length;
-	tmplen = tmpline * 6 + 128;
-	tmpbuf = kzalloc(tmplen, GFP_KERNEL);
-
-	if (!tmpbuf) {
-		TPD_INFO("%s, alloc failed \n", __func__);
-		return;
-	}
-
-	for (i = 0; i < length; i = i + tmpline) {
-		cnt = 0;
-
-		for (j = 0; j < tmpline; j++) {
-			cnt += snprintf(tmpbuf + cnt, tmplen - cnt, "%5d ", buffer[i + j]);
-
-			if ((cnt >= tmplen) || ((i + j + 1) >= length)) {
-				break;
-			}
-		}
-
-		TPD_DEBUG("%s", tmpbuf);
-	}
-
-	if (tmpbuf) {
-		kfree(tmpbuf);
-		tmpbuf = NULL;
-	}
-}
-
 
 #define NODE_MATCH      1
 #define CHANNEL_MATCH   2
@@ -1813,6 +1765,48 @@ test_err:
 	}
 }
 
+int ft3518_rst_autotest(struct seq_file *s, void *chip_data,
+                                  struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info)
+{
+	int ret = 0;
+	u8 val = 0;
+	u8 val2 = 0;
+	u8 val3 = 0;
+	struct chip_data_ft3518 *ts_data = (struct chip_data_ft3518 *)chip_data;
+
+	FTS_TEST_FUNC_ENTER();
+	FTS_TEST_SAVE_INFO("\n============ Test Item: Reset Test\n");
+
+	enter_work_mode();
+
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
+	val2 = val - 1;
+	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
+	ft3518_rstpin_reset((void*)ts_data);
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
+	TPD_INFO("one: reset test: val = %d, val3 = %d", val, val3);
+
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val);
+	val2 = val - 1;
+	fts_test_write_reg(FTS_REG_REPORT_RATE, val2);
+	ft3518_rstpin_reset((void*)ts_data);
+	fts_test_read_reg(FTS_REG_REPORT_RATE, &val3);
+	TPD_INFO("two: reset test: val = %d, val3 = %d", val, val3);
+
+	if (val3 != val) {
+		FTS_TEST_SAVE_ERR("check reg to test rst failed.\n");
+		ret = -1;
+	}
+
+	if (!ret) {
+		FTS_TEST_SAVE_INFO("------Reset Test PASS\n");
+	} else {
+		FTS_TEST_SAVE_INFO("------Reset Test NG\n");
+	}
+
+	FTS_TEST_FUNC_EXIT();
+	return ret;
+}
 
 int ft3518_rawdata_autotest(struct seq_file *s, void *chip_data,
 			    struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info)

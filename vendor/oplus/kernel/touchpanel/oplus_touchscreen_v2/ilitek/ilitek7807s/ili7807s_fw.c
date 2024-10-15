@@ -229,10 +229,8 @@ static int ilitek_tddi_fw_iram_read(u8 *buf, u32 start, int len)
 
 int ili_fw_dump_iram_data(u32 start, u32 end, bool save, bool mcu)
 {
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
 	struct file *f = NULL;
 	loff_t pos = 0;
-#endif
 	int i, ret = 0;
 	int len, tmp = ili_debug_en;
 	bool ice = atomic_read(&ilits->ice_stat);
@@ -266,11 +264,6 @@ int ili_fw_dump_iram_data(u32 start, u32 end, bool save, bool mcu)
 	}
 
 	if (save) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-		ILI_ERR("GKI2.0 not allow drivers to use filp_open\n");
-		ret = -ENOMEM;
-		goto out;
-#else
 		f = filp_open(DUMP_IRAM_PATH, O_WRONLY | O_CREAT | O_TRUNC, 644);
 
 		if (ERR_ALLOC_MEM(f)) {
@@ -285,7 +278,7 @@ int ili_fw_dump_iram_data(u32 start, u32 end, bool save, bool mcu)
 		kernel_write(f, ilits->update_buf, len, &pos);
 		filp_close(f, NULL);
 		ILI_INFO("Save iram data to %s\n", DUMP_IRAM_PATH);
-#endif
+
 	} else {
 		ili_debug_en = DEBUG_ALL;
 		ili_dump_data(ilits->update_buf, 8, len, 0, "IRAM");
@@ -506,13 +499,20 @@ static int ilitek_tddi_fw_iram_upgrade(u8 *pfw, bool mcu)
 
 static int ilitek_fw_calc_file_crc(u8 *pfw)
 {
-	int i;
+	int i, block_num = 0;
 	u32 ex_addr, data_crc, file_crc;
 
 	for (i = 0; i < ARRAY_SIZE(fbi); i++) {
-		if (fbi[i].end == 0) {
+		if (fbi[i].len >= MAX_HEX_FILE_SIZE) {
+			ILI_ERR("Content of fw file is invalid. (fbi[%d].len=0x%x)\n",
+				i, fbi[i].len);
+			return -1;
+		}
+
+		if (fbi[i].end <= 4) {
 			continue;
 		}
+		block_num++;
 
 		ex_addr = fbi[i].end;
 		data_crc = CalculateCRC32(fbi[i].start, fbi[i].len - 4, pfw);
@@ -525,6 +525,12 @@ static int ilitek_fw_calc_file_crc(u8 *pfw)
 				i, data_crc, file_crc);
 			return -1;
 		}
+	}
+
+	if (fbi[MP].end <= 1 * K || fbi[AP].end <= 1 * K || (block_num == 0)) {
+		ILI_ERR("Content of fw file is broken. fbi[AP].end = 0x%x, fbi[MP].end = 0x%x, block_num = %d\n",
+			fbi[AP].end, fbi[MP].end, block_num);
+		return -1;
 	}
 
 	ILI_INFO("Content of fw file is correct\n");
@@ -851,19 +857,11 @@ static int ilitek_tddi_fw_hex_convert(u8 *phex, int size, u8 *pfw)
 
 static int ilitek_tdd_fw_hex_open(u8 op, u8 *pfw)
 {
-	int ret = 0;
-#if LINUX_VERSION_CODE < KERNEL_VERSION(5, 10, 0)
-	int fsize = 0;
+	int ret = 0, fsize = 0;
 	struct file *f = NULL;
 	loff_t pos = 0;
-#endif
 
 	if (!ilits->oplus_fw_update) {
-#if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
-		ILI_ERR("GKI2.0 not allow drivers to use filp_open\n");
-		ret = -1;
-		goto out;
-#else
 		ILI_INFO("Open file method = %s, path = %s\n",
 			 "FILP_OPEN", DEF_FW_FILP_PATH);
 		f = filp_open(DEF_FW_FILP_PATH, O_RDONLY, 0644);
@@ -904,7 +902,7 @@ static int ilitek_tdd_fw_hex_open(u8 op, u8 *pfw)
 		kernel_read(f, (u8 *)ilits->tp_fw.data, fsize, &pos);
 		filp_close(f, NULL);
 		ilits->tp_fw.size = fsize;
-#endif
+
 	} else {
 		ILI_INFO("oplus fw update already request firmware\n");
 	}
@@ -1038,3 +1036,5 @@ out:
 
 	return ret;
 }
+
+MODULE_IMPORT_NS(VFS_internal_I_am_really_a_filesystem_and_am_NOT_a_driver);

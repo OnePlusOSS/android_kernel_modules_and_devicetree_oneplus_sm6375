@@ -39,6 +39,8 @@
 #define FTS_REG_FOD_EN                          0xCF
 #define FTS_REG_FOD_INFO                        0xE1
 #define FTS_REG_FOD_INFO_LEN                    9
+#define FTS_REG_AOD_INFO                        0xD1
+#define FTS_REG_AOD_INFO_LEN                    6
 
 #define FTS_REG_INT_CNT                         0x8F
 #define FTS_REG_FLOW_WORK_CNT                   0x91
@@ -124,6 +126,7 @@
 #define FTS_120HZ_REPORT_RATE                   0x0C
 #define FTS_180HZ_REPORT_RATE                   0x12
 
+
 struct mc_sc_threshold {
 	int noise_coefficient;
 	int short_cg;
@@ -183,12 +186,18 @@ struct fts_fod_info {
 	u8 fp_down_report;
 };
 
+struct fts_aod_info {
+	u8 gesture_id;
+	u8 point_num;
+	u16 aod_x;
+	u16 aod_y;
+};
+
 struct chip_data_ft3518 {
 	bool esd_check_need_stop;   /*true:esd check do nothing*/
 	bool esd_check_enabled;
 	bool use_panelfactory_limit;
 	bool is_power_down;
-	bool is_ic_sleep;    /*ic sleep status*/
 	u8 rbuf[FTS_MAX_POINTS_LENGTH];
 	u8 irq_type;
 	u8 fwver;
@@ -210,6 +219,7 @@ struct chip_data_ft3518 {
 	int *panel_differ_raw;
 	int *rawdata_linearity;
 	int tp_index;
+	int gesture_state;
 
 	char *test_limit_name;
 	char *fw_name;
@@ -221,15 +231,18 @@ struct chip_data_ft3518 {
 	struct hw_resource *hw_res;
 	struct fts_proc_operations *syna_ops;
 	struct fts_fod_info fod_info;
+	struct fts_aod_info aod_info;
 	struct seq_file *s;
 	struct fts_test mpt;
 	struct fts_autotest_offset *fts_autotest_offset;
 	struct touchpanel_data *ts;
-	int gesture_state;
+	struct monitor_data *monitor_data;
+
+	struct resolution_info *chip_resolution_info;
 	bool black_gesture_indep;
 	bool high_resolution_support;
 	bool high_resolution_support_x8;
-	bool read_buffer_support;
+	bool leave_gesture_buffer;
 };
 
 
@@ -254,5 +267,7 @@ int ft3518_short_test(struct seq_file *s, void *chip_data,
 int ft3518_auto_endoperation(struct seq_file *s, void *chip_data,
 			     struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info);
 
-
+int ft3518_rst_autotest(struct seq_file *s, void *chip_data,
+                                  struct auto_testdata *focal_testdata, struct test_item_info *p_test_item_info);
+int ft3518_rstpin_reset(void *chip_data);
 #endif /*__FT3518_CORE_H__*/

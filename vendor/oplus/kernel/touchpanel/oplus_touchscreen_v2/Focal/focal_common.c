@@ -5,7 +5,6 @@
 
 #include "focal_common.h"
 #include <linux/module.h>
-#include <linux/version.h>
 /*******LOG TAG Declear*****************************/
 
 #ifdef TPD_DEVICE
@@ -136,6 +135,50 @@ static void str_to_bytes(char *bufStr, int iLen, char *uBytes, int *iBytesLen)
 	hex_to_str(bufStr, num_ch_len, uBytes, iBytesLen);
 }
 
+void print_buffer(int *buffer, int length, int line_num)
+{
+	int i = 0;
+	int j = 0;
+	int tmpline = 0;
+	char *tmpbuf = NULL;
+	int tmplen = 0;
+	int cnt = 0;
+
+	if ((NULL == buffer) || (length <= 0)) {
+		TPD_INFO("buffer/length(%d) fail", length);
+		return;
+	}
+
+	tmpline = line_num ? line_num : length;
+	tmplen = tmpline * 6 + 128;
+	tmpbuf = kzalloc(tmplen, GFP_KERNEL);
+
+	if (!tmpbuf) {
+		TPD_INFO("%s, alloc failed \n", __func__);
+		return;
+	}
+
+	for (i = 0; i < length; i = i + tmpline) {
+		cnt = 0;
+
+		for (j = 0; j < tmpline; j++) {
+			cnt += snprintf(tmpbuf + cnt, tmplen - cnt, "%5d ", buffer[i + j]);
+
+			if ((cnt >= tmplen) || ((i + j + 1) >= length)) {
+				break;
+			}
+		}
+
+		TPD_DEBUG("%s", tmpbuf);
+	}
+
+	if (tmpbuf) {
+		kfree(tmpbuf);
+		tmpbuf = NULL;
+	}
+}
+EXPORT_SYMBOL(print_buffer);
+
 /***************** End of other functions work for device attribute file*********************/
 
 
@@ -215,7 +258,7 @@ static ssize_t focal_fw_version_show(struct device *dev,
 			num_read_chars = snprintf(buf, PAGE_SIZE, "get tp fw version fail!\n");
 
 		} else {
-			num_read_chars = snprintf(buf, PAGE_SIZE, "%02X\n", fw_version);
+			num_read_chars = snprintf(buf, PAGE_SIZE, "%02X\n", (unsigned int)fw_version);
 		}
 	}
 
@@ -236,21 +279,21 @@ static ssize_t focal_rw_reg_show(struct device *dev,
 
 	if (!g_rwreg_result.op) {
 		if (g_rwreg_result.result == 0) {
-			count = sprintf(buf, "Read %02X: %02X\n", g_rwreg_result.reg,
-					g_rwreg_result.value);
+			count = sprintf(buf, "Read %02X: %02X\n", (unsigned int)g_rwreg_result.reg,
+					(unsigned int)g_rwreg_result.value);
 
 		} else {
-			count = sprintf(buf, "Read %02X failed, ret: %d\n", g_rwreg_result.reg,
+			count = sprintf(buf, "Read %02X failed, ret: %d\n", (unsigned int)g_rwreg_result.reg,
 					g_rwreg_result.result);
 		}
 
 	} else {
 		if (g_rwreg_result.result == 0) {
-			count = sprintf(buf, "Write %02X, %02X success\n", g_rwreg_result.reg,
-					g_rwreg_result.value);
+			count = sprintf(buf, "Write %02X, %02X success\n", (unsigned int)g_rwreg_result.reg,
+					(unsigned int)g_rwreg_result.value);
 
 		} else {
-			count = sprintf(buf, "Write %02X failed, ret: %d\n", g_rwreg_result.reg,
+			count = sprintf(buf, "Write %02X failed, ret: %d\n", (unsigned int)g_rwreg_result.reg,
 					g_rwreg_result.result);
 		}
 	}
@@ -499,6 +542,7 @@ int focal_create_sysfs_spi(struct spi_device *spi)
 	return err;
 }
 EXPORT_SYMBOL(focal_create_sysfs_spi);
+
 /******************************* End of device attribute file******************************************/
 
 /********************Start of apk debug file and it's operation callbacks******************************/
@@ -561,7 +605,7 @@ static ssize_t focal_debug_write(struct file *filp, const char __user *buff,
 		break;
 
 	case PROC_HW_RESET:
-		snprintf(tmp, sizeof(tmp), "%s", writebuf + 1);
+		snprintf(tmp, sizeof(tmp), "%s", (char *)writebuf + 1);
 		tmp[buflen - 1] = '\0';
 
 		if (strncmp(tmp, "focal_driver", 12) == 0) {
@@ -682,8 +726,12 @@ static ssize_t focal_debug_read(struct file *filp, char __user *buff,
 
 	return num_read_chars;
 }
-
-DECLARE_PROC_OPS(focal_proc_fops, simple_open, focal_debug_read, focal_debug_write, NULL);
+static const struct file_operations focal_proc_fops = {
+	.owner  = THIS_MODULE,
+	.open  = simple_open,
+	.read   = focal_debug_read,
+	.write  = focal_debug_write,
+};
 
 static ssize_t proc_grip_control_write(struct file *file,
 				       const char __user *buffer, size_t count, loff_t *ppos)
@@ -730,7 +778,11 @@ static ssize_t proc_grip_control_write(struct file *file,
 	return count;
 }
 
-DECLARE_PROC_OPS(proc_grip_control_ops, simple_open, NULL, proc_grip_control_write, NULL);
+static const struct file_operations proc_grip_control_ops = {
+	.write = proc_grip_control_write,
+	.open  = simple_open,
+	.owner = THIS_MODULE,
+};
 
 int focal_create_apk_debug_channel(struct touchpanel_data *ts)
 {
@@ -849,7 +901,7 @@ static ssize_t fts_debug_write(struct file *filp, const char __user *buff,
 		break;
 
 	case PROC_HW_RESET:
-		snprintf(tmp, PROC_BUF_SIZE, "%s", writebuf + 1);
+		snprintf(tmp, PROC_BUF_SIZE, "%s", (char *)writebuf + 1);
 		tmp[((buflen - 1) > (PROC_BUF_SIZE - 1)) ? (PROC_BUF_SIZE - 1) :
 		    (buflen - 1)] = '\0';
 
@@ -976,7 +1028,11 @@ proc_read_err:
 	return ret;
 }
 
-DECLARE_PROC_OPS(ftxxxx_proc_fops, NULL, fts_debug_read, fts_debug_write, NULL);
+static const struct file_operations ftxxxx_proc_fops = {
+	.owner  = THIS_MODULE,
+	.read   = fts_debug_read,
+	.write  = fts_debug_write,
+};
 
 /*proc/touchpanel/baseline_test*/
 static int fts_auto_test_read_func(struct seq_file *s, void *v)
@@ -1099,7 +1155,13 @@ static int fts_baseline_autotest_open(struct inode *inode, struct file *file)
 	return single_open(file, fts_auto_test_read_func, PDE_DATA(inode));
 }
 
-DECLARE_PROC_OPS(fts_auto_test_proc_fops, fts_baseline_autotest_open, seq_read, NULL, single_release);
+static const struct file_operations fts_auto_test_proc_fops = {
+	.owner = THIS_MODULE,
+	.open  = fts_baseline_autotest_open,
+	.read  = seq_read,
+	.release = single_release,
+};
+
 
 /*int fts_create_proc(struct touchpanel_data *ts,
 		    struct fts_proc_operations *syna_ops)

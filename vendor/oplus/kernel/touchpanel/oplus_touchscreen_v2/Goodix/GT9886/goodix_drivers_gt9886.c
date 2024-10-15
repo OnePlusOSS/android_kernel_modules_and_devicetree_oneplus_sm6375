@@ -13,9 +13,7 @@ static int goodix_reset(void *chip_data);
 static u8 goodix_config_version_read(struct chip_data_gt9886 *chip_info);
 static void gtx8_check_setting_group(struct gtx8_ts_test *ts_test,
 				     struct short_record *r_data);
-static void goodix_config_info_read(struct seq_file *s, void *chip_data);
-static void goodix_special_register_info_read(struct seq_file *s, void *chip_data);
-
+static int goodix_send_gesture_control_data(struct chip_data_gt9886 *chip_info);
 
 /********** Start of special i2c tranfer interface used for goodix read/write*****************/
 /**
@@ -436,10 +434,14 @@ static int goodix_enter_sleep(struct chip_data_gt9886 *chip_info, bool config)
 static int goodix_enable_gesture(struct chip_data_gt9886 *chip_info, int enable)
 {
 	int ret = -1;
+	struct touchpanel_data *ts = i2c_get_clientdata(chip_info->client);
 
 	TPD_INFO("%s, gesture enable = %d\n", __func__, enable);
 
 	if (enable == 1 || enable == 2) {
+		if(ts->black_gesture_indep_support) /* if black gesture indep support is available we need enable individual gestures*/
+			ret = goodix_send_gesture_control_data(chip_info); /*To set gestures as per UI enabled */
+
 		ret = goodix_send_cmd(chip_info, GTP_CMD_GESTURE_ON, 0);
 
 	} else if (enable == 3) {
@@ -1031,7 +1033,7 @@ static int goodix_get_chip_info(void *chip_data)
 	reg_info->GTP_REG_RAWDATA               = 0x8FA0;    /*rawdata_reg*/
 	reg_info->GTP_REG_DIFFDATA              = 0x9D20;    /*diffdata_reg*/
 	reg_info->GTP_REG_BASEDATA              = 0xA980;    /*basedata_reg*/
-	reg_info->GTP_REG_DETAILED_DEBUG_INFO   = 0x3096;	//basedata_reg
+	reg_info->GESTURE_DATA_ADDR           	= 0x60a9;
 
 	/*return goodix_set_reset_status(chip_info);*/
 	return 0;
@@ -2848,20 +2850,21 @@ static void goodix_get_health_info(void *chip_data,
 	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
 	struct goodix_health_info *health_info;
 	struct goodix_health_info *health_local = &chip_info->health_info;
-	struct goodix_health_info health_data;
+	u8 log[20];
 	int ret = 0;
 	u8 clear_flag = 0;
 
-	ret = touch_i2c_read_block(chip_info->client, chip_info->reg_info.GTP_REG_DEBUG, sizeof(struct goodix_health_info), (unsigned char *)&health_data);
+	ret = touch_i2c_read_block(chip_info->client, chip_info->reg_info.GTP_REG_DEBUG,
+				   20, log);
 
 	if (ret < 0) {
 		TPD_INFO("%s: read debug log data i2c faild\n", __func__);
 		goto END_HEALTH;
 	}
 
-	TPD_DEBUG("GTP_REG_DEBUG:%*ph\n", sizeof(struct goodix_health_info), &health_data);
+	TPD_DEBUG("GTP_REG_DEBUG:%*ph\n", 20, log);
 
-	health_info = &health_data;
+	health_info = (struct goodix_health_info *)log;
 
 	if (health_info->shield_water) {
 		tp_healthinfo_report(mon_data, HEALTH_REPORT, HEALTH_REPORT_SHIELD_WATER);
@@ -3124,6 +3127,61 @@ static void goodix_enable_gesture_mask(void *chip_data, uint32_t enable)
 	return;
 }
 
+static void goodix_set_gesture_state(void *chip_data, int state)
+{
+	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
+	u32 state_inchip = 0;
+
+	TPD_INFO("%s: state : 0x%x, gesture_type: 0x%x\n", __func__, state, chip_info->gesture_type);
+
+	SET_GESTURE_BIT(state, SINGLE_TAP, state_inchip, GTP_GESTURE_SIN_TAP);
+	SET_GESTURE_BIT(state, DOU_TAP, state_inchip, GTP_GESTURE_DOU_TAP);
+	SET_GESTURE_BIT(state, FINGER_PRINTDOWN, state_inchip, FINGER_PRINT_DOWN);
+	SET_GESTURE_BIT(state, DOU_SWIP, state_inchip, GTP_GESTURE_DOU_SWIP);
+	SET_GESTURE_BIT(state, LEFT2RIGHT_SWIP, state_inchip, GTP_GESTURE_L2R_SWIP);
+	SET_GESTURE_BIT(state, RIGHT2LEFT_SWIP, state_inchip, GTP_GESTURE_R2L_SWIP);
+	SET_GESTURE_BIT(state, UP2DOWN_SWIP, state_inchip, GTP_GESTURE_U2D_SWIP);
+	SET_GESTURE_BIT(state, DOWN2UP_SWIP, state_inchip, GTP_GESTURE_D2U_SWIP);
+
+	SET_GESTURE_BIT(state, LEFT_VEE, state_inchip, GTP_GESTURE_LEFT_VEE);
+	SET_GESTURE_BIT(state, RIGHT_VEE, state_inchip, GTP_GESTURE_RIGHT_VEE);
+	SET_GESTURE_BIT(state, DOWN_VEE, state_inchip, GTP_GESTURE_DOWN_VEE);
+	SET_GESTURE_BIT(state, CIRCLE_GESTURE, state_inchip, GTP_GESTURE_CIRCLE);
+	SET_GESTURE_BIT(state, UP_VEE, state_inchip, GTP_GESTURE_UP_VEE);
+	SET_GESTURE_BIT(state, M_GESTRUE, state_inchip, GTP_GESTURE_M);
+	SET_GESTURE_BIT(state, W_GESTURE, state_inchip, GTP_GESTURE_W);
+
+	chip_info->gesture_type = state_inchip;
+	TPD_INFO("%s: state_inchip : 0x%x, gesture_type: 0x%x\n", __func__, state_inchip, chip_info->gesture_type);
+}
+
+static int goodix_send_gesture_control_data(struct chip_data_gt9886 *chip_info)
+{
+	u8 gesture_data_buf[6] = {0};
+	int ret = -1;
+
+	TPD_INFO("%s: gesture_type: 0x%x\n", __func__, chip_info->gesture_type);
+
+	chip_info->gesture_type |= (1 << FINGER_PRINT_DOWN); /* To enable the fingerprint down bit all time*/
+
+	gesture_data_buf[0] = 0xff;
+
+	gesture_data_buf[1] = chip_info->gesture_type & 0xFF;
+	gesture_data_buf[2] = (chip_info->gesture_type >> 8) & 0xFF;
+	gesture_data_buf[3] = 0x00;
+	gesture_data_buf[4] = 0x00;
+	gesture_data_buf[5] = (u8) (0-gesture_data_buf[0]-gesture_data_buf[1]-gesture_data_buf[2]-gesture_data_buf[3]-gesture_data_buf[4]);
+
+	/*disable doze mode*/
+	goodix_set_i2c_doze_mode(chip_info->client, false);
+
+	ret = touch_i2c_write_block(chip_info->client, chip_info->reg_info.GESTURE_DATA_ADDR, 6, gesture_data_buf);
+
+	/*enable doze mode*/
+	goodix_set_i2c_doze_mode(chip_info->client, true);
+	return ret;
+}
+
 static void goodix_screenon_fingerprint_info(void *chip_data,
 		struct fp_underscreen_info *fp_tpinfo)
 {
@@ -3172,38 +3230,6 @@ static int goodix_specific_resume_operate(void *chip_data,
 	return 0;
 }
 
-static int  goodix_smooth_lv_set(void *chip_data, int level)
-{
-	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-
-	TPD_DEBUG("set smooth lv to %d", level);
-
-	return goodix_send_cmd(chip_info, GTP_CMD_SMOOTH_LEVEL, level);
-}
-
-static int  goodix_sensitive_lv_set(void *chip_data, int level)
-{
-	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-
-	TPD_DEBUG("set sensitive lv to %d", level);
-
-	return goodix_send_cmd(chip_info, GTP_CMD_SENSITIVE_LEVEL, level);
-}
-
-static int goodix_set_high_frame_rate(void *chip_data, int level, int time)
-{
-	int ret = 0,high_frame_time = 0;
-	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-
-	if(level)
-		high_frame_time = time;
-
-	TPD_INFO("set high_frame_rate to %d, keep %ds", level, high_frame_time);
-	ret = goodix_send_cmd(chip_info, GTP_CMD_HIGH_FRAME_TIME, high_frame_time/5);
-
-	return ret;
-}
-
 struct oplus_touchpanel_operations goodix_ops = {
 	.ftm_process                 = goodix_ftm_process,
 	.get_vendor                  = goodix_get_vendor,
@@ -3212,7 +3238,7 @@ struct oplus_touchpanel_operations goodix_ops = {
 	.power_control               = goodix_power_control,
 	.fw_check                    = goodix_fw_check,
 	.fw_update                   = goodix_fw_update,
-	.trigger_reason              = goodix_trigger_reason,
+	.trigger_reason          = goodix_trigger_reason,
 	.get_touch_points            = goodix_get_touch_points,
 	.get_gesture_info            = goodix_get_gesture_info,
 	.mode_switch                 = goodix_mode_switch,
@@ -3223,156 +3249,10 @@ struct oplus_touchpanel_operations goodix_ops = {
 	.enable_gesture_mask         = goodix_enable_gesture_mask,
 	.screenon_fingerprint_info   = goodix_screenon_fingerprint_info,
 	.specific_resume_operate     = goodix_specific_resume_operate,
-	.smooth_lv_set               = goodix_smooth_lv_set,
-	.sensitive_lv_set            = goodix_sensitive_lv_set,
 	.health_report               = goodix_get_health_info,
-	.set_high_frame_rate         = goodix_set_high_frame_rate,
+	.set_gesture_state         	 = goodix_set_gesture_state,
 };
 /********* End of implementation of oplus_touchpanel_operations callbacks**********************/
-static void goodix_detailed_debug_info_read(struct seq_file *s, void *chip_data, debug_type debug_type)
-{
-	int ret = -1, i = 0, j = 0, retry = 0;
-	u8 *kernel_buf = NULL;
-	int addr = 0;
-	u8 clear_state = 0, log_buf = 0, read_data_times = 0;
-	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-	int TX_NUM = 0;
-	int RX_NUM = 0;
-	s16 data = 0;
-
-	TPD_INFO("%s enter %d\n",__func__);
-
-	/*disable doze mode*/
-	goodix_set_i2c_doze_mode(chip_info->client, false);
-	/*keep in active mode*/
-	goodix_send_cmd(chip_info, GTP_CMD_ENTER_DOZE_TIME, 0xFF);
-
-	ret = goodix_get_channel_num(chip_info->client, &RX_NUM, &TX_NUM);
-	if (ret < 0) {
-		TPD_INFO("get channel num fail, quit!\n");
-		goto read_data_exit;
-	}
-
-	kernel_buf = kzalloc(PAGE_SIZE, GFP_KERNEL);
-	if(kernel_buf == NULL) {
-		TPD_INFO("%s kmalloc error\n", __func__);
-		goodix_set_i2c_doze_mode(chip_info->client, true);
-		return;
-	}
-	switch (debug_type) {
-	case GTP_RAWDATA:
-		addr = chip_info->reg_info.GTP_REG_RAWDATA;
-		break;
-	case GTP_DIFFDATA:
-		addr = chip_info->reg_info.GTP_REG_DIFFDATA;
-		break;
-	default:
-		addr = chip_info->reg_info.GTP_REG_BASEDATA;
-		break;
-	}
-	chip_info->gt8x_rawdiff_mode = 1;
-
-	log_buf = 0xAA;
-	gt9886_i2c_write(chip_info->client, chip_info->reg_info.GTP_REG_DETAILED_DEBUG_INFO, 1, &log_buf);
-	msleep(10);
-	for(i = 0; i < 3; i++) {
-		ret = gt9886_i2c_read(chip_info->client, chip_info->reg_info.GTP_REG_DETAILED_DEBUG_INFO, 1, &log_buf);
-		if(log_buf == 0xAA && ret > 0) {
-			break;
-		}
-		msleep(5);
-	}
-
-	goodix_send_cmd(chip_info, GTP_CMD_RAWDATA, 0);
-	msleep(20);
-
-	while(retry++ < 10) {
-		ret = gt9886_i2c_read(chip_info->client, chip_info->reg_info.GTP_REG_READ_COOR, 1, kernel_buf);
-		TPD_INFO("ret = %d  kernel_buf = %d\n", ret, kernel_buf[0]);
-		if((ret > 0) && ((kernel_buf[0] & 0x80) == 0x80)) {
-		TPD_INFO("Data ready OK");
-			retry = 0;
-			break;
-		}
-		msleep(20);
-	}
-	if(retry >= 10) {
-		TPD_INFO("data not ready, quit!\n");
-	}
-
-	ret = gt9886_i2c_read(chip_info->client, addr, TX_NUM * RX_NUM * 2, kernel_buf);
-	msleep(5);
-
-	seq_printf(s, "debug data:\n");
-	for(i = 0; i < RX_NUM; i++) {
-		seq_printf(s, "[%2d] ", i);
-		for(j = 0; j < TX_NUM; j++) {
-			data = (kernel_buf[j * RX_NUM * 2 + i * 2] << 8) + kernel_buf[j * RX_NUM * 2 + i * 2 + 1];
-			seq_printf(s, "%4d ", data);
-		}
-		seq_printf(s, "\n");
-	}
-
-	log_buf = 0x00;
-	gt9886_i2c_write(chip_info->client, chip_info->reg_info.GTP_REG_DETAILED_DEBUG_INFO, 1, &log_buf);
-	msleep(10);
-	for(i = 0; i < 3; i++) {
-		ret = gt9886_i2c_read(chip_info->client, chip_info->reg_info.GTP_REG_DETAILED_DEBUG_INFO, 1, &log_buf);
-		if(log_buf == 0x00 && ret > 0) {
-			break;
-		}
-		msleep(5);
-	}
-
-	seq_printf(s, "\n");
-	seq_printf(s, "diff data:\n");
-	for(read_data_times = 0; read_data_times < 5; read_data_times++) {
-		gt9886_i2c_write(chip_info->client, chip_info->reg_info.GTP_REG_READ_COOR, 1, &clear_state);
-		//wait for data ready
-		while(retry++ < 10) {
-			ret = gt9886_i2c_read(chip_info->client, chip_info->reg_info.GTP_REG_READ_COOR, 1, kernel_buf);
-			TPD_INFO("ret = %d  kernel_buf = %d\n", ret, kernel_buf[0]);
-			if((ret > 0) && ((kernel_buf[0] & 0x80) == 0x80)) {
-				TPD_INFO("Data ready OK");
-				retry = 0;
-				break;
-			}
-			msleep(20);
-		}
-		if(retry >= 10) {
-			TPD_INFO("data not ready, quit!\n");
-			goto read_data_exit;
-		}
-
-		ret = gt9886_i2c_read(chip_info->client, addr, TX_NUM * RX_NUM * 2, kernel_buf);
-		msleep(5);
-
-		for(i = 0; i < RX_NUM; i++) {
-			seq_printf(s, "[%2d] ", i);
-			for(j = 0; j < TX_NUM; j++) {
-				data = (kernel_buf[j * RX_NUM * 2 + i * 2] << 8) + kernel_buf[j * RX_NUM * 2 + i * 2 + 1];
-				seq_printf(s, "%4d ", data);
-			}
-			seq_printf(s, "\n");
-		}
-		seq_printf(s, "\n");
-	}
-
-	goodix_config_info_read(s,chip_data);
-	goodix_special_register_info_read(s,chip_data);
-
-read_data_exit:
-	goodix_send_cmd(chip_info, GTP_CMD_NORMAL, 0);
-	chip_info->gt8x_rawdiff_mode = 0;
-	gt9886_i2c_write(chip_info->client, chip_info->reg_info.GTP_REG_READ_COOR, 1, &clear_state);
-	/*be normal in idle*/
-	goodix_send_cmd(chip_info, GTP_CMD_DEFULT_DOZE_TIME, 0x00);
-	/*enable doze mode*/
-	goodix_set_i2c_doze_mode(chip_info->client, true);
-	kfree(kernel_buf);
-	return;
-}
-
 
 /******** Start of implementation of debug_info_proc_operations callbacks*********************/
 static void goodix_debug_info_read(struct seq_file *s, void *chip_data,
@@ -3419,6 +3299,7 @@ static void goodix_debug_info_read(struct seq_file *s, void *chip_data,
 		addr = chip_info->reg_info.GTP_REG_BASEDATA;
 		break;
 	}
+
 	chip_info->gt8x_rawdiff_mode = 1;
 	goodix_send_cmd(chip_info, GTP_CMD_RAWDATA, 0);
 	msleep(20);
@@ -3542,64 +3423,10 @@ exit:
 	return;
 }
 
-static void goodix_special_register_info_read(struct seq_file *s, void *chip_data)
-{
-    int ret = -1,i=0;
-	uint16_t reg = 0;
-    u8 reg_buff[88] = {0};
-    struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-
-    TPD_INFO("%s enter %d\n",__func__);
-    seq_printf(s, "\ngoodix_special_register_info_read:\n");
-
-    reg = 0x5254;
-    ret = gt9886_i2c_read(chip_info->client, reg , 88,reg_buff);
-    if (ret < 0) {
-        TPD_INFO("%s failed to read 0x5254 data.\n", __func__);
-        goto exit;
-    }
-
-    seq_printf(s, "\nreg =0x5254 data:\n");
-	for(i= 0;i < 88;i++)
-	    seq_printf(s, "%4d ", reg_buff[i]);
-
-    reg = 0x45EC;
-    ret = gt9886_i2c_read(chip_info->client, reg , 88,reg_buff);
-    if (ret < 0) {
-        TPD_INFO("%s failed to read 0x45EC data.\n", __func__);
-        goto exit;
-    }
-
-    seq_printf(s, "\nreg =0x45EC data:\n");
-	for(i= 0;i < 88;i++)
-	    seq_printf(s, "%4d ", reg_buff[i]);
-
-    reg = 0x56E3;
-    ret = gt9886_i2c_read(chip_info->client, reg , 88,reg_buff);
-    if (ret < 0) {
-        TPD_INFO("%s failed to read 0x56E3  data.\n", __func__);
-        goto exit;
-    }
-
-    seq_printf(s, "\nreg =0x56E3 data:\n");
-	for(i= 0;i < 88;i++)
-	    seq_printf(s, "%4d ", reg_buff[i]);
-
-exit:
-    return;
-}
-
 /*proc/touchpanel/debug_info/delta*/
 static void goodix_delta_read(struct seq_file *s, void *chip_data)
 {
-	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
-	TPD_INFO("%s detail_debug_info_support = %d\n",__func__,chip_info->detail_debug_info_support);
-
-	if (chip_info->detail_debug_info_support) {
-		goodix_detailed_debug_info_read(s, chip_data, GTP_DIFFDATA);
-	} else {
-		goodix_debug_info_read(s, chip_data, GTP_DIFFDATA);
-	}
+	goodix_debug_info_read(s, chip_data, GTP_DIFFDATA);
 
 	if (tp_debug) {
 		goodix_down_diff_info_read(s, chip_data);
@@ -3659,7 +3486,7 @@ out:
 
 static struct debug_info_proc_operations debug_info_proc_ops = {
 	.delta_read    = goodix_delta_read,
-    .baseline_read = goodix_baseline_read,
+	.baseline_read = goodix_baseline_read,
 	.main_register_read = goodix_main_register_read,
 };
 /********* End of implementation of debug_info_proc_operations callbacks**********************/
@@ -3831,8 +3658,6 @@ static void goodix_config_info_read(struct seq_file *s, void *chip_data)
 	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
 	char temp_data[TS_CFG_MAX_LEN] = {0};
 
-	TPD_INFO("%s enter %d\n",__func__);
-
 	seq_printf(s, "==== Goodix default config setting in driver====\n");
 
 	for (i = 0; i < TS_CFG_MAX_LEN && i < chip_info->normal_cfg.length; i++) {
@@ -3879,14 +3704,6 @@ static void goodix_config_info_read(struct seq_file *s, void *chip_data)
 	if (ret < 0) {
 		TPD_INFO("goodix_config_info_read goodix_read_config error:%d\n", ret);
 		goto exit;
-	}
-
-	for (i = 0; i < TS_CFG_MAX_LEN ; i++) {
-		seq_printf(s, "0x%02X, ", temp_data[i]);
-
-		if (i % 10 == 9) {
-			seq_printf(s, "\n");
-		}
 	}
 
 	seq_printf(s, "\n");
@@ -4756,8 +4573,7 @@ static int gtx8_self_rawcapacitance_test(struct ts_test_self_rawdata *rawdata,
  */
 static int gtx8_captest_prepare(void *chip_data)
 {
-	int ret = -EINVAL, result = 0;
-	char temp_data[TS_CFG_MAX_LEN] = {0};
+	int ret = -EINVAL;
 	struct chip_data_gt9886 *chip_info = (struct chip_data_gt9886 *)chip_data;
 
 	TPD_INFO("%s run\n", __func__);
@@ -4771,21 +4587,6 @@ static int gtx8_captest_prepare(void *chip_data)
 		TPD_INFO("Success send test config");
 	}
 
-	result = goodix_read_config(chip_info, temp_data, 0);
-	if (result) {
-		TPD_INFO("Failed to read test config:%d\n", result);
-	} else {
-		TPD_INFO("read test config ver:%x cfg.data: %x\n",  temp_data[0],  chip_info->test_cfg.data[0]);
-		if (temp_data[0] != chip_info->test_cfg.data[0]) {
-			ret = goodix_send_config(chip_info, chip_info->test_cfg.data,
-					 chip_info->test_cfg.length);
-			if (ret) {
-				TPD_INFO("Failed to send test config again :%d\n", ret);
-			} else {
-				TPD_INFO("Success send test config again");
-			}
-	    }
-	}
 	TPD_INFO("%s exit:%d\n", __func__, ret);
 	return ret;
 }
@@ -5041,15 +4842,7 @@ static int gtx8_capacitance_test(struct seq_file *s, void *chip_data,
 
 	msleep(50);
 
-
 	ret = gtx8_rawdata_test(chip_info);
-	if (ret < 0) {
-		TPD_INFO("%s:Failed gtx8_rawdata_test:ret%d\n", __func__, ret);
-                goto capac_test_exit;
-
-	} else {
-		TPD_INFO("%s: Success gtx8_rawdata_test\n", __func__);
-	}
 
 capac_test_exit:
 	i2c_ret = touch_i2c_write_block(chip_info->client, ts_test->normal_cmd.cmd_reg,
@@ -5104,20 +4897,6 @@ static int gtx8_self_rawcapacitance(struct seq_file *s, void *chip_data,
 			TPD_INFO("TYPE_SPECIAL_SELFRAW_MAX_MIN para_num is invalid\n");
 		}
 	}
-
-	/* read rawdata and calculate result,  statistics fail times */
-	ret = touch_i2c_write_block(chip_info->client, ts_test->rawdata_cmd.cmd_reg,
-				    ts_test->rawdata_cmd.length, ts_test->rawdata_cmd.cmds);
-
-	if (ret < 0) {
-		TPD_INFO("%s:Failed send rawdata cmd:ret%d\n", __func__, ret);
-		goto capac_test_exit;
-
-	} else {
-		TPD_INFO("%s: Success change to rawdata mode\n", __func__);
-	}
-
-	msleep(50);
 
 	/* read selfrawdata and calculate result,  statistics fail times */
 	ret = gtx8_cache_self_rawdata(chip_info);
@@ -6209,7 +5988,6 @@ static int goodix_tp_probe(struct i2c_client *client,
 
 	chip_info->monitor_data = &ts->monitor_data;
 	chip_info->kernel_grip_support = ts->kernel_grip_support;
-	chip_info->detail_debug_info_support = of_property_read_bool(ts->dev->of_node, "goodix_detail_debug_info_support");
 	chip_info->tp_index = ts->tp_index;
 
 	/* 8. create goodix tool node */
