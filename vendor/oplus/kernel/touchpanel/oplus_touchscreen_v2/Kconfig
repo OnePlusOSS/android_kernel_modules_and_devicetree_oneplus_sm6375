@@ -24,15 +24,15 @@ config TOUCHPANEL_OPLUS
       Say Y here if you have touchscreen build into driver.
       Say M here if you have touchscreen as module.
 
-config OPLUS_MTK_DRM_GKI_NOTIFY
-       default n
-       tristate "tp mtk gki notify"
-
 config OPLUS_TP_APK
     bool "OPLUS apk node create"
     help
       Say Y here if you use apk for TP.
 
+config TOUCHPANEL_ALGORITHM
+    bool "touch alogoritm in driver support"
+    help
+      Say Y here if you use touch alogoritm in driver.
 
 config REMOVE_OPLUS_FUNCTION
     bool "REMOVE_OPLUS_FUNCTION"
@@ -52,50 +52,51 @@ config TOUCHPANEL_NOTIFY
 
 config TOUCHPANEL_SYNAPTICS
     tristate "TP Synaptics_IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using Synaptics_IC
+    ---help---
+    say Y to enable driver for Touchpanel using Synaptics_IC
     Say M to enable driver for Touchpanel using Synaptics_IC as module.
 
 config TOUCHPANEL_FOCAL
     tristate "TP Focal_IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using FOCALTECK_IC
+    ---help---
+    say Y to enable driver for Touchpanel using FOCALTECK_IC
     Say M to enable driver for Touchpanel using FOCALTECK_IC as module.
 
 config TOUCHPANEL_GOODIX
     tristate "TP Goodix_IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using GOODIX_IC
+    ---help---
+    say Y to enable driver for Touchpanel using GOODIX_IC
     Say M to enable driver for Touchpanel using GOODIX_IC as module.
 
 config TOUCHPANEL_NOVA
     tristate "TP Novatek_IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using NOVATECK_IC
+    ---help---
+    say Y to enable driver for Touchpanel using NOVATECK_IC
     Say M to enable driver for Touchpanel using NOVATECK_IC as module.
 
 config TOUCHPANEL_HIMAX
     tristate "TP HIMAX_IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using HIMAX_IC
+    ---help---
+    say Y to enable driver for Touchpanel using HIMAX_IC
     Say M to enable driver for Touchpanel using HIMAX_IC as module.
 
 config TOUCHPANEL_SAMSUNG
     tristate "TP samsung IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using samsung IC
+    ---help---
+    say Y to enable driver for Touchpanel using samsung IC
     Say M to enable driver for Touchpanel using samsung IC as module.
 
 config TOUCHPANEL_ILITEK
     tristate "TP ilitek IC enable or not for OPLUS"
-    help
-    Say Y to enable driver for Touchpanel using ilitek IC
+    ---help---
+    say Y to enable driver for Touchpanel using ilitek IC
     Say M to enable driver for Touchpanel using ilitek IC as module.
+
 config TOUCHPANEL_ST
-	tristate "TP st IC enable or not for OPLUS"
-	help
-	Say Y to enable driver for Touchpanel using st IC
-	Say M to enable driver for Touchpanel using st IC as module.
+    tristate "TP st IC enable or not for OPLUS"
+    ---help---
+    Say Y to enable driver for Touchpanel using st IC
+    Say M to enable driver for Touchpanel using st IC as module.
 
 if TOUCHPANEL_SYNAPTICS
 source "drivers/input/touchscreen/oplus_touchscreen_v2/Synaptics/Kconfig"
@@ -123,6 +124,7 @@ endif
 if TOUCHPANEL_ILITEK
 source "drivers/input/touchscreen/oplus_touchscreen_v2/ilitek/Kconfig"
 endif
+
 if TOUCHPANEL_ST
 source "drivers/input/touchscreen/oplus_touchscreen_v2/St/Kconfig"
 endif

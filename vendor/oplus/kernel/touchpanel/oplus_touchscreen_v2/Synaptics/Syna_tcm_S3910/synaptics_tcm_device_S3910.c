@@ -10,7 +10,7 @@
 #include "synaptics_tcm_S3910.h"
 
 #define CHAR_DEVICE_NAME "tcm"
-#define PLATFORM_DRIVER_NAME "synaptics_tcm_S3910"
+#define PLATFORM_DRIVER_NAME "synaptics_tcm"
 #define CONCURRENT true
 
 #define DEVICE_IOC_MAGIC 's'
@@ -18,6 +18,26 @@
 #define DEVICE_IOC_IRQ _IOW(DEVICE_IOC_MAGIC, 1, int) /* 0x40047301 */
 #define DEVICE_IOC_RAW _IOW(DEVICE_IOC_MAGIC, 2, int) /* 0x40047302 */
 #define DEVICE_IOC_CONCURRENT _IOW(DEVICE_IOC_MAGIC, 3, int) /* 0x40047303 */
+
+#ifdef EXTERNAL_DEBUG_LOGGING
+#define STD_GET_FRAME_ID		(0x15)
+#define STD_SEND_MESSAGE_ID		(0x16)
+#define STD_SET_REPORTS_ID		(0x17)
+#define STD_CLEAN_OUT_FRAMES_ID (0x19)
+
+#define DEVICE_IOC_GET_FRAME _IOR(DEVICE_IOC_MAGIC, STD_GET_FRAME_ID, struct syna_tcm_ioctl_data *) /* 0x80087315 */
+#define DEVICE_IOC_SEND_MESSAGE _IOW(DEVICE_IOC_MAGIC, STD_SEND_MESSAGE_ID, struct syna_tcm_ioctl_data *) /* 0x40087316 */
+#define DEVICE_IOC_SET_REPORTS _IOW(DEVICE_IOC_MAGIC, STD_SET_REPORTS_ID, struct syna_tcm_ioctl_data *) /* 0x40087317 */
+#define DEVICE_IOC_CLEAN_OUT_FRAMES _IOW(DEVICE_IOC_MAGIC, STD_CLEAN_OUT_FRAMES_ID, struct syna_tcm_ioctl_data *) /* 0x40087319 */
+
+#define FIFO_QUEUE_MAX_FRAMES	(240)
+
+struct fifo_queue {
+	struct list_head next;
+	unsigned char *fifo_data;
+	unsigned int data_length;
+};
+#endif
 
 static struct device_hcd *g_device_hcd[TP_SUPPORT_MAX] = {NULL};
 
@@ -197,6 +217,391 @@ static int device_capture_touch_report_config(struct device_hcd *device_hcd,
 	return 0;
 }
 
+#ifdef EXTERNAL_DEBUG_LOGGING
+static int device_ioctl_get_frame(struct device_hcd *tcm_hcd,
+		const unsigned char *ubuf_ptr, unsigned int buf_size,
+		unsigned int *frame_size)
+{
+	int retval = 0;
+	int timeout = 0;
+	unsigned char timeout_data[4] = {0};
+	struct fifo_queue *pfifo_data = NULL;
+	struct syna_tcm_data *tcm_info = tcm_hcd->tcm_info;
+
+	if (buf_size < sizeof(timeout_data)) {
+		retval = -EINVAL;
+		goto exit;
+	}
+	retval = copy_from_user(timeout_data, ubuf_ptr, sizeof(timeout_data));
+	if (retval) {
+		retval = -EBADE;
+		goto exit;
+	}
+
+	/* get the waiting duration */
+	timeout = le4_to_uint(&timeout_data[0]);
+	if (list_empty(&tcm_info->frame_fifo_queue)) {
+		retval = wait_event_interruptible_timeout(tcm_info->wait_frame,
+				(tcm_info->fifo_remaining_frame > 0),
+				msecs_to_jiffies(timeout));
+		if (retval == 0) {
+			retval = -ETIMEDOUT;
+			*frame_size = 0;
+			goto exit;
+		}
+	}
+
+	/* confirm the queue status */
+	if (list_empty(&tcm_info->frame_fifo_queue)) {
+		pr_err("Is queue empty? The remaining frame = %d\n",
+			tcm_info->fifo_remaining_frame);
+		retval = -ENODATA;
+		goto exit;
+	}
+
+	mutex_lock(&tcm_info->fifo_mutex);
+
+	pfifo_data = list_first_entry(&tcm_info->frame_fifo_queue,
+			struct fifo_queue, next);
+
+	if (pfifo_data == NULL) {
+		pr_err("pfifo_data is NULL error\n");
+		mutex_unlock(&tcm_info->fifo_mutex);
+		retval = -ENODATA;
+		goto exit;
+	}
+
+	pr_info("Pop data from the queue, data length = %d\n",
+		pfifo_data->data_length);
+
+	if (buf_size >= pfifo_data->data_length) {
+		retval = copy_to_user((void *)ubuf_ptr,
+				pfifo_data->fifo_data,
+				pfifo_data->data_length);
+		if (retval) {
+			pr_info("Fail to copy data to user space, size:%d\n", retval);
+			retval = -EBADE;
+		}
+
+		*frame_size = pfifo_data->data_length;
+
+	} else {
+		pr_err("No enough space for data copy, buf_size:%d data:%d\n",
+			buf_size, pfifo_data->data_length);
+
+		mutex_unlock(&tcm_info->fifo_mutex);
+		retval = -EOVERFLOW;
+		goto exit;
+	}
+
+	pr_info("From FIFO: (0x%02x, 0x%02x, 0x%02x, 0x%02x)\n",
+		pfifo_data->fifo_data[0], pfifo_data->fifo_data[1],
+		pfifo_data->fifo_data[2], pfifo_data->fifo_data[3]);
+
+	if (retval >= 0)
+		retval = pfifo_data->data_length;
+
+	list_del(&pfifo_data->next);
+	kfree(pfifo_data->fifo_data);
+	kfree(pfifo_data);
+	if (tcm_info->fifo_remaining_frame != 0)
+		tcm_info->fifo_remaining_frame--;
+
+	mutex_unlock(&tcm_info->fifo_mutex);
+
+exit:
+	return retval;
+}
+
+static void device_clean_queue(struct device_hcd *tcm_hcd)
+{
+	struct fifo_queue *pfifo_data = NULL;
+
+	struct syna_tcm_data *tcm_info = tcm_hcd->tcm_info;
+
+	mutex_lock(&tcm_info->fifo_mutex);
+
+	while (!list_empty(&tcm_info->frame_fifo_queue)) {
+		pfifo_data = list_first_entry(&tcm_info->frame_fifo_queue,
+				struct fifo_queue, next);
+		if (pfifo_data == NULL) {
+			pr_err("pfifo_data is NULL error\n");
+			mutex_unlock(&tcm_info->fifo_mutex);
+			return;
+		}
+
+		list_del(&pfifo_data->next);
+		kfree(pfifo_data->fifo_data);
+		kfree(pfifo_data);
+		if (tcm_info->fifo_remaining_frame != 0)
+			tcm_info->fifo_remaining_frame--;
+	}
+
+	pr_info("Queue cleaned, frame: %d\n", tcm_info->fifo_remaining_frame);
+
+	mutex_unlock(&tcm_info->fifo_mutex);
+}
+
+static int device_insert_fifo(struct syna_tcm_data *tcm_info,
+		unsigned char *buf_ptr, unsigned int length)
+{
+	int retval = 0;
+	struct fifo_queue *pfifo_data = NULL;
+	struct fifo_queue *pfifo_data_temp = NULL;
+	static int pre_remaining_frames = -1;
+
+	mutex_lock(&tcm_info->fifo_mutex);
+
+	/* check queue buffer limit */
+	if (tcm_info->fifo_remaining_frame >= FIFO_QUEUE_MAX_FRAMES) {
+		if (tcm_info->fifo_remaining_frame != pre_remaining_frames)
+			pr_info("Reached %d and drop FIFO first frame\n",
+				tcm_info->fifo_remaining_frame);
+
+		pfifo_data_temp = list_first_entry(&tcm_info->frame_fifo_queue,
+						struct fifo_queue, next);
+
+		list_del(&pfifo_data_temp->next);
+		kfree(pfifo_data_temp->fifo_data);
+		kfree(pfifo_data_temp);
+		pre_remaining_frames = tcm_info->fifo_remaining_frame;
+		tcm_info->fifo_remaining_frame--;
+	} else if (pre_remaining_frames >= FIFO_QUEUE_MAX_FRAMES) {
+		pr_info("Reached limit, dropped oldest frame, remaining:%d\n",
+			tcm_info->fifo_remaining_frame);
+		pre_remaining_frames = tcm_info->fifo_remaining_frame;
+	} else {
+		pr_info("Queued frames:%d\n",
+			tcm_info->fifo_remaining_frame);
+	}
+
+	pfifo_data = kmalloc(sizeof(*pfifo_data), GFP_KERNEL);
+	if (!(pfifo_data)) {
+		pr_err("Allocation size = %zu\n", (sizeof(*pfifo_data)));
+		retval = -ENOMEM;
+		goto exit;
+	}
+
+	pfifo_data->fifo_data = kmalloc(length, GFP_KERNEL);
+	if (!(pfifo_data->fifo_data)) {
+		pr_err("Failed to allocate memory, size = %d\n", length);
+		kfree(pfifo_data);
+		retval = -ENOMEM;
+		goto exit;
+	}
+
+	pfifo_data->data_length = length;
+
+	memcpy((void *)pfifo_data->fifo_data, (void *)buf_ptr, length);
+	/* append the data to the tail for FIFO queueing */
+	list_add_tail(&pfifo_data->next, &tcm_info->frame_fifo_queue);
+	tcm_info->fifo_remaining_frame++;
+	retval = 0;
+exit:
+	mutex_unlock(&tcm_info->fifo_mutex);
+	return retval;
+}
+
+void device_update_report_queue(struct syna_tcm_data *tcm_info,
+		unsigned char code, struct syna_tcm_buffer *pevent_data)
+{
+	int retval;
+	unsigned char *frame_buffer = NULL;
+	unsigned int frame_length = 0;
+
+	if ((pevent_data == NULL) ||
+		(pevent_data->buf == NULL)) {
+		pr_err("Returned, invalid event data pointer\n");
+		return;
+	}
+	if ((pevent_data->data_length == 0) &&
+		(tcm_info->payload_length == 0)) {
+		pr_err("Returned, invalid event data length = 0\n");
+		return;
+	}
+	pr_info("Report ID = 0x%x\n", (int)code);
+	frame_length = (tcm_info->payload_length + 3);
+	frame_buffer = &pevent_data->buf[1];
+	pr_info("The overall queuing data length = %d\n", frame_length);
+
+	retval = device_insert_fifo(tcm_info, frame_buffer, frame_length);
+	if (retval < 0) {
+		pr_err("Fail to insert data to fifo\n");
+		goto exit;
+	}
+	pr_info("Pushed to fifo: (0x%02x, 0x%02x, 0x%02x, 0x%02x)\n",
+		frame_buffer[0], frame_buffer[1],
+		frame_buffer[2], frame_buffer[3]);
+	wake_up_interruptible(&(tcm_info->wait_frame));
+
+exit:
+	return;
+}
+
+static int device_ioctl_set_reports(struct device_hcd *tcm_hcd,
+		const unsigned char *ubuf_ptr, unsigned int buf_size,
+		unsigned int report_size)
+{
+	int retval = 0;
+	unsigned char data[REPORT_TYPES] = {0};
+	unsigned int reports = 0;
+	unsigned int report_set = 0;
+
+	struct syna_tcm_data *tcm_info = tcm_hcd->tcm_info;
+
+	if (buf_size < sizeof(data)) {
+		pr_err("Invalid sync data size, buf_size:%d, expected:%d\n",
+			buf_size, (unsigned int)sizeof(data));
+		return -EINVAL;
+	}
+
+	if (report_size == 0) {
+		pr_err("Invalid written size\n");
+		return -EINVAL;
+	}
+
+	retval = copy_from_user(data, ubuf_ptr, report_size);
+	if (retval) {
+		pr_err("Fail to copy data from user space, size:%d\n", retval);
+		retval = -EBADE;
+		goto exit;
+	}
+
+	memcpy((void *)tcm_info->report_to_queue, (void *)data, REPORT_TYPES);
+	for (reports = 0 ; reports < REPORT_TYPES ; reports++) {
+		if (tcm_info->report_to_queue[reports] == EDL_ENABLE) {
+			report_set++;
+			pr_info("Set report 0x%02x for queue\n", reports);
+		}
+	}
+	pr_info("Forward %d types of reports to the Queue.\n", report_set);
+	retval = report_set;
+
+exit:
+	return retval;
+}
+
+static int device_ioctl_config_report(struct device_hcd *tcm_hcd,
+		const unsigned char *ubuf_ptr, unsigned int buf_size,
+		unsigned int *msg_size)
+{
+	int retval = 0;
+	unsigned int payload_length = 0;
+	unsigned char *data = NULL;
+	unsigned char cmd = 0;
+	struct syna_tcm_data *tcm_info = tcm_hcd->tcm_info;
+
+	if (buf_size < 2) {
+		pr_err("Invalid sync data size, buf_size:%d\n", buf_size);
+		return -EINVAL;
+	}
+
+	if (*msg_size == 0 || *msg_size < 3) {
+		pr_err("Invalid message length, msg size: %d\n", *msg_size);
+		return -EINVAL;
+	}
+	pr_info("Message size:%d\n", *msg_size);
+	data = kmalloc(*msg_size, GFP_KERNEL);
+	if (!data) {
+		pr_err("Failed to allocate memory, size = %d\n", *msg_size);
+		return -ENOMEM;
+	}
+
+	LOCK_BUFFER(tcm_hcd->out);
+
+	retval = copy_from_user(data, ubuf_ptr, *msg_size);
+	if (retval) {
+		pr_err("Fail to copy data from user space, size:%d\n", retval);
+		retval = -EBADE;
+		UNLOCK_BUFFER(tcm_hcd->out);
+		kfree(data);
+		return retval;
+	}
+	pr_info("data[0]:%d data[1]:%d data[2]:%d\n",
+			data[0], data[1], data[2]);
+
+	cmd = data[0];
+	payload_length = le2_to_uint(&data[1]);
+	if (payload_length > 0 && ((buf_size - 3) >= payload_length)) {
+		retval = syna_tcm_alloc_mem(&tcm_hcd->out, payload_length);
+		if (retval < 0) {
+			pr_err("Failed to allocate memory for testing_hcd->out.buf\n");
+			UNLOCK_BUFFER(tcm_hcd->out);
+			kfree(data);
+			return retval;
+		}
+
+		memcpy((void *)tcm_hcd->out.buf, (void *)&data[3], payload_length);
+	} else {
+		pr_err("Invaild payload length: %d, buf_size: %d\n",
+					payload_length, buf_size);
+	}
+	if (data)
+		kfree(data);
+
+	pr_info("CMD:%02x, payload_length:%d\n", cmd, payload_length);
+	if (payload_length > 0) {
+		pr_info("Payload[0]:%02x\n", tcm_hcd->out.buf[0]);
+	}
+
+	LOCK_BUFFER(tcm_hcd->resp);
+
+	retval = tcm_hcd->write_message(tcm_info,
+			cmd,
+			tcm_hcd->out.buf,
+			payload_length,
+			&tcm_hcd->resp.buf,
+			&tcm_hcd->resp.buf_size,
+			&tcm_hcd->resp.data_length,
+			0);
+	if (retval < 0) {
+		pr_err("Failed to write command %s\n",
+				STR(cmd));
+		UNLOCK_BUFFER(tcm_hcd->resp);
+		UNLOCK_BUFFER(tcm_hcd->out);
+		return retval;
+	}
+
+	UNLOCK_BUFFER(tcm_hcd->resp);
+	UNLOCK_BUFFER(tcm_hcd->out);
+	return retval;
+}
+
+static int device_ioctl_dispatch(struct device_hcd *tcm_hcd,
+		unsigned int code, const unsigned char *ubuf_ptr,
+		unsigned int ubuf_size, unsigned int *data_size)
+{
+	int retval = 0;
+	switch (code) {
+	case STD_GET_FRAME_ID:
+		pr_info("STD_GET_FRAME_ID called\n");
+		retval = device_ioctl_get_frame(tcm_hcd,
+				ubuf_ptr, ubuf_size, data_size);
+		break;
+	case STD_SEND_MESSAGE_ID:
+		pr_info("STD_SEND_MESSAGE_ID called\n");
+		retval = device_ioctl_config_report(tcm_hcd,
+				ubuf_ptr, ubuf_size, data_size);
+		break;
+	case STD_SET_REPORTS_ID:
+		pr_info("STD_SET_REPORTS_ID called\n");
+		retval = device_ioctl_set_reports(tcm_hcd,
+				ubuf_ptr, ubuf_size, *data_size);
+		break;
+	case STD_CLEAN_OUT_FRAMES_ID:
+		pr_info("STD_CLEAN_OUT_FRAMES_ID called\n");
+		device_clean_queue(tcm_hcd);
+		retval = 0;
+		break;
+	default:
+		pr_err("Unknown IOCTL operation: 0x%x\n", code);
+		return -EINVAL;
+	}
+
+	return retval;
+}
+#endif
+
 #if LINUX_VERSION_CODE >= KERNEL_VERSION(5, 10, 0)
 static long device_ioctl(struct file *filp, unsigned int cmd, unsigned long arg)
 #else
@@ -212,11 +617,13 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 	struct device_hcd *device_hcd  = NULL;
 	struct syna_tcm_data *tcm_info = NULL;
 
+#ifdef EXTERNAL_DEBUG_LOGGING
+	struct syna_tcm_ioctl_data ioc_data;
+	unsigned char *ptr = NULL;
+#endif
+
 	device_hcd = filp->private_data;
 	tcm_info = device_hcd->tcm_info;
-
-	pr_info("%s: 0x%x\n", __func__, cmd);
-
 	mutex_lock(&device_hcd->extif_mutex);
 
 	switch (cmd) {
@@ -259,12 +666,52 @@ static int device_ioctl(struct inode *inp, struct file *filp, unsigned int cmd,
 		}
 
 		break;
+#ifdef EXTERNAL_DEBUG_LOGGING
+	case DEVICE_IOC_GET_FRAME:
+	case DEVICE_IOC_SEND_MESSAGE:
+	case DEVICE_IOC_SET_REPORTS:
+	case DEVICE_IOC_CLEAN_OUT_FRAMES:
+		retval = copy_from_user(&ioc_data,
+				(void __user *) arg,
+				sizeof(struct syna_tcm_ioctl_data));
+		if (retval) {
+			pr_err("Fail to copy ioctl_data from user space, size:%d\n", retval);
+			retval = -EBADE;
+			goto exit;
+		}
+
+		ptr = ioc_data.buf;
+
+		retval = device_ioctl_dispatch(device_hcd,
+				(unsigned int)_IOC_NR(cmd),
+				(const unsigned char *)ptr,
+				ioc_data.buf_size,
+				&ioc_data.data_length);
+		if (retval < 0) {
+			if (retval != -ETIMEDOUT) {
+				pr_err("Fail to do ioctl dispatch, retval:%d\n", retval);
+			}
+			goto exit;
+		}
+
+		retval = copy_to_user((void __user *) arg,
+				&ioc_data,
+				sizeof(struct syna_tcm_ioctl_data));
+		if (retval) {
+			pr_err("Fail to update ioctl_data to user space, size:%d\n", retval);
+			retval = -EBADE;
+			goto exit;
+		}
+		break;
+#endif
 
 	default:
 		retval = -ENOTTY;
 		break;
 	}
-
+#ifdef EXTERNAL_DEBUG_LOGGING
+	exit:
+#endif
 	mutex_unlock(&device_hcd->extif_mutex);
 
 	return retval;
@@ -554,6 +1001,7 @@ static int device_init(struct syna_tcm_data *tcm_info)
 		pr_err("Failed to allocate memory for device_hcd\n");
 		return -ENOMEM;
 	}
+	device_hcd->rmidev_major_num = 0;
 
 	mutex_init(&device_hcd->extif_mutex);
 	device_hcd->tp_index = tcm_info->tp_index;

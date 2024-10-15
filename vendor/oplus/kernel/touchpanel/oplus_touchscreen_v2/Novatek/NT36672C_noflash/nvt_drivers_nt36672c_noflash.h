@@ -14,12 +14,6 @@
 
 #include "../novatek_common.h"
 
-#ifdef CONFIG_TOUCHPANEL_MTK_PLATFORM
-#include "mtk_spi.h"
-#else
-#include "oplus_spi.h"
-#endif
-
 #ifdef TPD_DEVICE
 #undef TPD_DEVICE
 #define TPD_DEVICE "novatek,nf_nt36672c"
@@ -89,6 +83,8 @@
 #define EVENTBUFFER_EXT_DBG_WKG_COORD_RECORD_OFF  0x06
 #define EVENTBUFFER_EXT_DBG_WATER_POLLING_ON      0x07
 #define EVENTBUFFER_EXT_DBG_WATER_POLLING_OFF     0x08
+#define EVENTBUFFER_EXT_JITTER_LEVEL              0x0C
+#define EVENTBUFFER_EXT_SMOOTH_LEVEL              0x0D
 
 #define NVT_TOUCH_FW_DEBUG_INFO (1)
 #define NVT_DUMP_SRAM   (0)

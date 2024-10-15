@@ -27,7 +27,7 @@ extern unsigned int tp_debug;
 #endif
 
 #define TPD_INFO(a, arg...)  pr_err("[TP]"TPD_DEVICE ": " a, ##arg)
-#define TP_INFO(index, a, arg...)  pr_err("[TP""%x""]"TPD_DEVICE": " a, index, ##arg)
+#define TP_INFO(index, a, arg...)  pr_err("[TP]"TPD_DEVICE"%x" ": " a, index, ##arg)
 
 #define TPD_DEBUG(a, arg...)\
 	do{\
@@ -38,7 +38,7 @@ extern unsigned int tp_debug;
 #define TP_DEBUG(index, a, arg...)\
 			do{\
 				if (LEVEL_DEBUG == tp_debug)\
-					pr_err("[TP""%x""]"TPD_DEVICE": " a, index, ##arg);\
+					pr_err("[TP]"TPD_DEVICE"%x"": " a, index, ##arg);\
 			}while(0)
 
 #define TPD_DETAIL(a, arg...)\
@@ -50,7 +50,7 @@ extern unsigned int tp_debug;
 #define TP_DETAIL(index, a, arg...)\
 			do{\
 				if (LEVEL_BASIC != tp_debug)\
-					pr_err("[TP""%x""]"TPD_DEVICE": " a, index, ##arg);\
+					pr_err("[TP]"TPD_DEVICE"%x"": " a, index, ##arg);\
 			}while(0)
 
 #define TPD_SPECIFIC_PRINT(count, a, arg...)\
@@ -373,7 +373,7 @@ static inline unsigned long tp_copy_from_user(void *to, unsigned long dest_size,
 
 	if (src_size > dest_size) {
 		TPD_INFO("%s:dest_size = %lu, src_size = %lu\n",
-			 __func__, dest_size, src_size);
+			 __func__, MaxCount, src_size);
 		return src_size;
 	}
 

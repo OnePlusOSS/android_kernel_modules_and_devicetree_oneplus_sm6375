@@ -84,49 +84,6 @@ int focal_abs_3681(int value)
 	return value;
 }
 
-void print_buffer(int *buffer, int length, int line_num)
-{
-	int i = 0;
-	int j = 0;
-	int tmpline = 0;
-	char *tmpbuf = NULL;
-	int tmplen = 0;
-	int cnt = 0;
-
-	if ((NULL == buffer) || (length <= 0)) {
-		TPD_INFO("buffer/length(%d) fail", length);
-		return;
-	}
-
-	tmpline = line_num ? line_num : length;
-	tmplen = tmpline * 6 + 128;
-	tmpbuf = kzalloc(tmplen, GFP_KERNEL);
-
-	if (!tmpbuf) {
-		TPD_INFO("%s, alloc failed \n", __func__);
-		return;
-	}
-
-	for (i = 0; i < length; i = i + tmpline) {
-		cnt = 0;
-
-		for (j = 0; j < tmpline; j++) {
-			cnt += snprintf(tmpbuf + cnt, tmplen - cnt, "%5d ", buffer[i + j]);
-
-			if ((cnt >= tmplen) || ((i + j + 1) >= length)) {
-				break;
-			}
-		}
-
-		TPD_DEBUG("%s", tmpbuf);
-	}
-
-	if (tmpbuf) {
-		kfree(tmpbuf);
-		tmpbuf = NULL;
-	}
-}
-
 #define NODE_MATCH      1
 #define CHANNEL_MATCH   2
 #define CHEN_MATCH      3

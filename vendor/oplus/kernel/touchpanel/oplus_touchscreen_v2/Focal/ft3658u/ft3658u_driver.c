@@ -6,7 +6,7 @@
 #include <linux/delay.h>
 #include <linux/module.h>
 #include <linux/gpio.h>
-#include <linux/version.h>
+
 #include "ft3658u_core.h"
 
 struct chip_data_ft3658u *g_fts3658u_data = NULL;
@@ -19,6 +19,13 @@ struct chip_data_ft3658u *g_fts3658u_data = NULL;
 #else
 #define TPD_DEVICE "focaltech,ft3658u"
 #endif
+#define TPD_INFO(a, arg...)  pr_err("[TP]"TPD_DEVICE ": " a, ##arg)
+#define TPD_DEBUG(a, arg...)\
+    do{\
+        if (LEVEL_DEBUG == tp_debug)\
+            pr_err("[TP]"TPD_DEVICE ": " a, ##arg);\
+    }while(0)
+
 
 #define FTS_REG_UPGRADE                             0xFC
 #define FTS_UPGRADE_AA                              0xAA
@@ -69,8 +76,6 @@ enum GESTURE_ID {
 	GESTURE_O_ANTICLOCK = 0x30,
 	GESTURE_W = 0x31,
 	GESTURE_M = 0x32,
-	GESTURE_HEART_CLOCKWISE = 0x59,
-	GESTURE_HEART_ANTICLOCK = 0x55,
 	GESTURE_FINGER_PRINT = 0x26,
 	GESTURE_SINGLE_TAP = 0x27,
 };
@@ -269,7 +274,11 @@ proc_read_err:
 	return ret;
 }
 
-DECLARE_PROC_OPS(fts_proc_fops, simple_open, fts_debug_read, fts_debug_write, NULL);
+static const struct file_operations fts_proc_fops = {
+	.owner  = THIS_MODULE,
+	.read   = fts_debug_read,
+	.write  = fts_debug_write,
+};
 
 static int fts_create_apk_debug_channel(struct chip_data_ft3658u *ts_data)
 {
@@ -305,10 +314,10 @@ static void fts_auto_write_result(struct chip_data_ft3658u *ts_data, struct auto
 
 	TPD_INFO("%s +\n", __func__);
 
-	/* step2: create a file to store test data in /sdcard/Tp_Test */
+	//step2: create a file to store test data in /sdcard/Tp_Test
 	getnstimeofday(&now_time);
 	rtc_time_to_tm(now_time.tv_sec, &rtc_now_time);
-	/* if test fail,save result to path:/sdcard/TpTestReport/screenOn/NG */
+	//if test fail,save result to path:/sdcard/TpTestReport/screenOn/NG/
 
 	if (failed_count) {
 		snprintf(file_data_buf, 128, "/sdcard/TpTestReport/screenOn/NG/tp_testlimit_%02d%02d%02d-%02d%02d%02d-fail-utc.csv",
@@ -318,6 +327,7 @@ static void fts_auto_write_result(struct chip_data_ft3658u *ts_data, struct auto
 		snprintf(file_data_buf, 128, "/sdcard/TpTestReport/screenOn/OK/tp_testlimit_%02d%02d%02d-%02d%02d%02d-pass-utc.csv",
 		         (rtc_now_time.tm_year + 1900) % 100, rtc_now_time.tm_mon + 1, rtc_now_time.tm_mday,
 		         rtc_now_time.tm_hour, rtc_now_time.tm_min, rtc_now_time.tm_sec);
+
 	}
 
 	old_fs = get_fs();
@@ -410,7 +420,7 @@ static int fts_auto_test_entry(struct seq_file *s, void *v)
 	if (!p_focal_testdata->fp) {
 		seq_printf(s, "focal_testdata.fp malloc fail\n");
 		return 0;
-	}
+	};
 	p_focal_testdata->length = (1024 * 80 * 5);
 	p_focal_testdata->pos = &pos;
 
@@ -496,6 +506,16 @@ static int fts_auto_test_entry(struct seq_file *s, void *v)
 		}
 	}
 
+	if (!fts_test_ops->test7) {
+		TPD_INFO("not support fts_test_ops->test7 callback\n");
+	} else {
+		ret = fts_test_ops->test7(s, ts->chip_data, p_focal_testdata, NULL);
+		if (ret < 0) {
+			TPD_INFO("test7 failed\n");
+			error_count++;
+		}
+	}
+
 	if (!fts_test_ops->auto_test_endoperation) {
 		TPD_INFO("not support fts_test_ops->auto_test_preoperation callback\n");
 	} else {
@@ -528,7 +548,18 @@ static int fts_auto_test_entry(struct seq_file *s, void *v)
 	return 0;
 }
 
-DECLARE_PROC_OPS(fts_auto_test_proc_fops, fts_baseline_autotest_open, seq_read, NULL, single_release);
+static int fts_baseline_autotest_open(struct inode *inode, struct file *file)
+{
+	return single_open(file, fts_auto_test_entry, PDE_DATA(inode));
+}
+
+static const struct file_operations fts_auto_test_proc_fops = {
+	.owner = THIS_MODULE,
+	.open  = fts_baseline_autotest_open,
+	.read  = seq_read,
+	.release = single_release,
+};
+
 
 static int fts_create_proc_baseline_test(struct touchpanel_data *ts)
 {
@@ -614,6 +645,7 @@ static int fts3658u_power_control(void *chip_data, bool enable)
 	}
 #endif
 	return ret;
+
 }
 
 static int focal3658u_dump_reg_state(void *chip_data, char *buf)
@@ -624,31 +656,31 @@ static int focal3658u_dump_reg_state(void *chip_data, char *buf)
 
 	/*power mode 0:active 1:monitor 3:sleep*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_POWER_MODE);
-	count += sprintf(buf + count, "Power Mode:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "Power Mode:0x%02x\n", regvalue);
 
 	/*FW version*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_FW_VER);
-	count += sprintf(buf + count, "FW Ver:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "FW Ver:0x%02x\n", regvalue);
 
 	/*Vendor ID*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_VENDOR_ID);
-	count += sprintf(buf + count, "Vendor ID:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "Vendor ID:0x%02x\n", regvalue);
 
 	/* 1 Gesture mode,0 Normal mode*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_GESTURE_EN);
-	count += sprintf(buf + count, "Gesture Mode:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "Gesture Mode:0x%02x\n", regvalue);
 
 	/* 3 charge in*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_CHARGER_MODE_EN);
-	count += sprintf(buf + count, "charge stat:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "charge stat:0x%02x\n", regvalue);
 
 	/*Interrupt counter*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_INT_CNT);
-	count += sprintf(buf + count, "INT count:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "INT count:0x%02x\n", regvalue);
 
 	/*Flow work counter*/
 	regvalue = touch_i2c_read_byte(ts_data->client, FTS_REG_FLOW_WORK_CNT);
-	count += sprintf(buf + count, "ESD count:0x%02x\n", regvalue);
+	count += snprintf(buf + count, 256, "ESD count:0x%02x\n", regvalue);
 
 	return count;
 }
@@ -754,8 +786,7 @@ static void fts_release_all_finger(struct touchpanel_data *ts)
 	input_sync(ts->input_dev);
 	mutex_unlock(&ts->report_mutex);
 	TPD_INFO("enter fts_release_all_finger\n");
-	/* realse all touch point,must clear this flag */
-	ts->view_area_touched = 0;
+	ts->view_area_touched = 0; //realse all touch point,must clear this flag
 	ts->touch_count = 0;
 	ts->irq_slot = 0;
 #endif
@@ -774,7 +805,7 @@ static void fts_prc_func(struct work_struct *work)
 			fts_release_all_finger(ts_data->ts);
 		}
 		ts_data->prc_mode = 0;
-		TPD_INFO("interval:%lu", (cur_jiffies - ts_data->intr_jiffies) * 1000 / HZ);
+		//FTS_DEBUG("interval:%lu", (cur_jiffies - ts_data->intr_jiffies) * 1000 / HZ);
 	} else {
 		queue_delayed_work(ts_data->ts_workqueue, &ts_data->prc_work,
 		                   msecs_to_jiffies(POINT_REPORT_CHECK_WAIT_TIME));
@@ -1011,7 +1042,7 @@ static int fts_fwupg_ecc_cal_host(u8 *buf, u32 len)
 	u32 i = 0;
 	u32 j = 0;
 
-	for (i = 0; i < len; i += 2) {
+	for ( i = 0; i < len; i += 2 ) {
 		ecc ^= ((buf[i] << 8) | (buf[i + 1]));
 		for (j = 0; j < 16; j ++) {
 			if (ecc & 0x01)
@@ -1673,6 +1704,13 @@ static int fts3658u_reset(void *chip_data)
 	return 0;
 }
 
+int ft3658u_rstpin_reset(void *chip_data)
+{
+	fts3658u_reset(chip_data);
+
+	return 0;
+}
+
 static int  fts3658u_reset_gpio_control(void *chip_data, bool enable)
 {
 	struct chip_data_ft3658u *ts_data = (struct chip_data_ft3658u *)chip_data;
@@ -1767,7 +1805,7 @@ static fw_check_state fts3658u_fw_check(void *chip_data,
 	TPD_INFO("FW VER:%d", panel_data->tp_fw);
 
 	if (panel_data->manufacture_info.version) {
-		sprintf(dev_version, "%04x", panel_data->tp_fw);
+		snprintf(dev_version, 16, "%04x", panel_data->tp_fw);
 		strlcpy(&(panel_data->manufacture_info.version[7]), dev_version, 5);
 	}
 
@@ -2127,15 +2165,6 @@ static int fts3658u_get_gesture_info(void *chip_data, struct gesture_info *gestu
 		gesture->gesture_type = W_GESTURE;
 		break;
 
-	case GESTURE_HEART_CLOCKWISE:
-		gesture->clockwise = 1;
-		gesture->gesture_type = HEART;
-		break;
-	case GESTURE_HEART_ANTICLOCK:
-		gesture->clockwise = 0;
-		gesture->gesture_type = HEART;
-		break;
-
 	case GESTURE_FINGER_PRINT:
 		fts_read_fod_info(ts_data);
 		TPD_INFO("FOD event type:0x%x", ts_data->fod_info.event_type);
@@ -2307,10 +2336,14 @@ static int fts3658u_set_high_frame_rate(void *chip_data, int level, int time)
 	struct chip_data_ft3658u *ts_data = (struct chip_data_ft3658u *)chip_data;
 
 	TPD_INFO("set high_frame_rate to %d, keep %ds", level, time);
+
 	if (level > 0) {
 		TPD_INFO("Enter high_frame mode, MODE_GAME, write 0xC3=%d, MODE_HIGH_FRAME write 0x8E=%d, HIGH_FRAME_TIME write 0x8A=%d", true, true, time);
-
-                ret = touch_i2c_write_byte(ts_data->client, FTS_REG_HIGH_FRAME_EN, true);
+		ret = touch_i2c_write_byte(ts_data->client, FTS_REG_GAME_MODE_EN, true);
+		if (ret < 0) {
+			return ret;
+		}
+		ret = touch_i2c_write_byte(ts_data->client, FTS_REG_HIGH_FRAME_EN, true);
 		if (ret < 0) {
 			return ret;
 		}
@@ -2325,6 +2358,7 @@ static int fts3658u_set_high_frame_rate(void *chip_data, int level, int time)
 			return ret;
 		}
 	}
+
 	return ret;
 }
 
@@ -2339,7 +2373,12 @@ static int fts3658u_refresh_switch(void *chip_data, int fps)
 		fps == 60 ? FTS_120HZ_REPORT_RATE : FTS_180HZ_REPORT_RATE);
 }
 
+#ifdef FTS_KIT
 static struct oplus_touchpanel_operations fts_ops = {
+#endif
+#ifndef FTS_KIT
+static struct oplus_touchpanel_operations fts_ops = {
+#endif
 	.power_control              = fts3658u_power_control,
 	.get_vendor                 = fts3658u_get_vendor,
 	.get_chip_info              = fts3658u_get_chip_info,
@@ -2373,6 +2412,7 @@ static struct focal_auto_test_operations ft3658u_test_ops = {
 	.test4 = ft3658u_scap_rawdata_autotest,
 	.test5 = ft3658u_short_test,
 	.test6 = ft3658u_noise_autotest,
+	.test7 = ft3658u_rst_autotest,
 	.auto_test_endoperation = ft3658u_auto_endoperation,
 };
 
@@ -2385,7 +2425,6 @@ static struct engineer_test_operations ft3658u_engineer_test_ops = {
 static struct debug_info_proc_operations fts_debug_info_proc_ops = {
 	.delta_read        = fts3658u_delta_read,
 	.baseline_read = fts3658u_baseline_read,
-    .baseline_blackscreen_read = fts3658u_baseline_read,
 	.main_register_read = fts3658u_main_register_read,
 };
 
@@ -2496,7 +2535,7 @@ static int fts3658u_tp_probe(struct i2c_client * client,
 
 #ifdef FTS_KIT
 	/*proc/touchpanel/baseline_test*/
-	/*create baseline_test, oplus     driver delete*/
+	/*create baseline_test, oplus driver delete*/
 	fts_create_proc_baseline_test(ts);
 #endif
 
@@ -2509,12 +2548,14 @@ static int fts3658u_tp_probe(struct i2c_client * client,
 	return 0;
 
 err_register_driver:
+	i2c_set_clientdata(client, NULL);
 	common_touch_data_free(ts);
 	ts = NULL;
 
 ts_malloc_failed:
 	kfree(ts_data);
 	ts_data = NULL;
+	/* ret = -1; */
 
 	TPD_INFO("%s, probe error\n", __func__);
 

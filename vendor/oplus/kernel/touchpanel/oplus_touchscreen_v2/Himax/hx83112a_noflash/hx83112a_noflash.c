@@ -8367,8 +8367,7 @@ int __init tp_driver_init_hx83112a_nf(void)
 	TPD_INFO("%s is called\n", __func__);
 
 	if (!tp_judge_ic_match(TPD_DEVICE)) {
-		TPD_INFO("tp_judge_ic_match is fail \n");
-		return 0;
+		return -1;
 	}
 
 	/*get_lcd_vendor();*/
@@ -8378,7 +8377,7 @@ int __init tp_driver_init_hx83112a_nf(void)
 
 	if (status < 0) {
 		TPD_INFO("%s, Failed to register SPI driver.\n", __func__);
-		return 0;
+		return -EINVAL;
 	}
 
 	return status;

@@ -29,8 +29,6 @@
 		track,wls_epp_chg_scheme = <0>;
 		track,wls_fast_chg_scheme = <0>;
 		track,gauge_status_ctrl_dtsi;
-		track,nominal_qmax1 = <4535>;
-		track,nominal_fcc1 = <4440>;
 		track,external_gauge_num = <1>;
 	};
 

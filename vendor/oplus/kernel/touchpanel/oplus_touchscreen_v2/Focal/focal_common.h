@@ -13,6 +13,7 @@
 #include "../touchpanel_common.h"
 #include "../touch_comon_api/touch_comon_api.h"
 #include "../touchpanel_autotest/touchpanel_autotest.h"
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
 
 /*********PART2:Define Area**********************/
 /*create apk debug channel*/
@@ -134,6 +135,7 @@ struct focal_debug_func {
 
 /*********PART4:function declare*****************/
 int focal_create_sysfs_spi(struct spi_device *spi);
+void print_buffer(int *buffer, int length, int line_num);
 int focal_create_sysfs(struct i2c_client *client);
 int focal_create_apk_debug_channel(struct touchpanel_data *ts);
 void ft_limit_read_std(struct seq_file *s, struct touchpanel_data *ts);

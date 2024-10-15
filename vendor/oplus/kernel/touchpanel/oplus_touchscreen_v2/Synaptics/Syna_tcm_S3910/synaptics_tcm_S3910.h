@@ -13,6 +13,7 @@
 
 #include "../../touchpanel_common.h"
 #include "../synaptics_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 #ifdef TPD_DEVICE
 #undef TPD_DEVICE
@@ -35,6 +36,15 @@
 #define MESSAGE_HEADER_SIZE     4
 #define MESSAGE_MARKER          0xA5
 #define MESSAGE_PADDING         0x5A
+
+
+/* The external frame data logging */
+#define EXTERNAL_DEBUG_LOGGING
+#ifdef EXTERNAL_DEBUG_LOGGING
+#define REPORT_TYPES		(256)
+#define EDL_ENABLE			(1)
+#define EDL_DISABLE			(0)
+#endif
 
 #define REPORT_TIMEOUT_MS       1000
 #define POWEWRUP_TO_RESET_TIME  10
@@ -482,6 +492,12 @@ struct syna_dc_in_driver {
 	uint16_t g_abs_dark_sel;
 };
 
+struct fp_area_rate {
+	unsigned int min;
+	unsigned int max;
+	unsigned int recent;
+};
+
 #define FIRMWARE_MODE_BL_MAX 2
 #define FPS_REPORT_NUM 6
 #define ERROR_STATE_MAX 3
@@ -513,8 +529,17 @@ struct syna_tcm_data {
 	struct completion      response_complete;
 	struct completion      report_complete;
 
+#ifdef EXTERNAL_DEBUG_LOGGING
+	struct list_head frame_fifo_queue;
+	wait_queue_head_t wait_frame;
+	unsigned int fifo_remaining_frame;
+	unsigned char report_to_queue[REPORT_TYPES];
+	struct mutex fifo_mutex;
+	struct syna_tcm_buffer external_buf;
+#endif
+
 	atomic_t command_status;
-	char *iHex_name;
+	char *ihex_name;
 	int *in_suspend;
 	u16 default_noise_length;
 	uint8_t touch_direction;
@@ -550,6 +575,7 @@ struct syna_tcm_data {
 
 	int tp_index;
 	struct monitor_data    *monitor_data;                /*health monitor data*/
+	struct exception_data  *exception_data;                /*health monitor data*/
 	uint8_t *raw_data; /*auto test data*/
 	uint32_t raw_data_size; /*auto test data*/
 	uint8_t  *data_buf;
@@ -587,6 +613,11 @@ struct syna_tcm_data {
 	bool black_gesture_indep;
 	int block_delay_us;
 	int byte_delay_us;
+
+	struct fp_area_rate fp_area_rate;
+	bool fp_triggered;
+
+	bool charger_connected;
 };
 
 struct device_hcd {
@@ -616,6 +647,16 @@ struct device_hcd {
 	int tp_index;
 	int rmidev_major_num;
 };
+
+#ifdef EXTERNAL_DEBUG_LOGGING
+struct syna_tcm_ioctl_data {
+	unsigned int data_length;
+	unsigned int buf_size;
+	unsigned char __user *buf;
+};
+void device_update_report_queue(struct syna_tcm_data *tcm_info,
+		unsigned char code, struct syna_tcm_buffer *pevent_data);
+#endif
 
 static inline int syna_tcm_realloc_mem(struct syna_tcm_buffer *buffer,
 				       unsigned int size)
@@ -687,5 +728,9 @@ int syna_tcm_rmi_write(struct syna_tcm_data *tcm_info,
 */
 extern void tp_fw_auto_reset_handle(struct touchpanel_data *ts);
 
+struct syna_support_grip_zone {
+	char name[GRIP_TAG_SIZE];
+	int (*handle_func)(void *chip_data, struct grip_zone_area *grip_zone, bool enable);
+};
 
 #endif  /*_SYNAPTICS_TCM_CORE_H_*/

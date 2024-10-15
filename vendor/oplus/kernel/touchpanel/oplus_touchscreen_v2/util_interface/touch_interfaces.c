@@ -11,6 +11,8 @@
 #include "touch_interfaces.h"
 #include "../touchpanel_common.h"
 #include "../touch_comon_api/touch_comon_api.h"
+#include "../touchpanel_healthinfo/touchpanel_healthinfo.h"
+#include "../touchpanel_healthinfo/touchpanel_exception.h"
 
 #define FIX_I2C_LENGTH   256
 
@@ -77,7 +79,18 @@ int touch_i2c_read_block(struct i2c_client *client, u16 addr,
 {
 	int retval;
 	unsigned char buffer[2] = {(addr >> 8) & 0xff, addr & 0xff};
-	struct touchpanel_data *ts = i2c_get_clientdata(client);
+	struct touchpanel_data *ts = NULL;
+
+	if (!client) {
+		dump_stack();
+		return -1;
+	}
+
+	ts = i2c_get_clientdata(client);
+	if (!ts) {
+		dump_stack();
+		return -1;
+	}
 
 	if (!ts->interface_data.register_is_16bit) { /* if register is 8bit*/
 		retval = touch_i2c_read(client, &buffer[1], 1, data, length);
@@ -146,7 +159,18 @@ int touch_i2c_write_block(struct i2c_client *client, u16 addr,
 	unsigned char retry;
 	unsigned int total_length = 0;
 	struct i2c_msg msg[1];
-	struct touchpanel_data *ts = i2c_get_clientdata(client);
+	struct touchpanel_data *ts = NULL;
+
+	if (!client) {
+		dump_stack();
+		return -1;
+	}
+
+	ts = i2c_get_clientdata(client);
+	if (!ts) {
+		dump_stack();
+		return -1;
+	}
 
 	mutex_lock(&ts->interface_data.bus_mutex);
 
@@ -257,6 +281,15 @@ int touch_i2c_write_block(struct i2c_client *client, u16 addr,
 		ts->monitor_data.bus_buf = msg[0].buf;
 		ts->monitor_data.bus_len = msg[0].len;
 		tp_healthinfo_report(&ts->monitor_data, HEALTH_BUS, &retval);
+	}
+
+	if (ts->exception_upload_support) {
+		if (retry == MAX_I2C_RETRY_TIME) {
+			ts->exception_data.bus_error_count++;
+		} else {
+			ts->exception_data.bus_error_count = 0;
+		}
+		tp_exception_report(&ts->exception_data, EXCEP_BUS, "bus_failed", sizeof("bus_failed"));
 	}
 
 	mutex_unlock(&ts->interface_data.bus_mutex);
@@ -430,7 +463,18 @@ inline int touch_i2c_read(struct i2c_client *client, char *writebuf,
 	unsigned char retry;
 	struct i2c_msg msg[2];
 	struct i2c_msg message;
-	struct touchpanel_data *ts = i2c_get_clientdata(client);
+	struct touchpanel_data *ts = NULL;
+
+	if (!client) {
+		dump_stack();
+		return -1;
+	}
+
+	ts = i2c_get_clientdata(client);
+	if (!ts) {
+		dump_stack();
+		return -1;
+	}
 
 	mutex_lock(&ts->interface_data.bus_mutex);
 
@@ -629,6 +673,15 @@ inline int touch_i2c_read(struct i2c_client *client, char *writebuf,
 		}
 	}
 
+	if (ts->exception_upload_support) {
+		if (retry == MAX_I2C_RETRY_TIME) {
+			ts->exception_data.bus_error_count++;
+		} else {
+			ts->exception_data.bus_error_count = 0;
+		}
+		tp_exception_report(&ts->exception_data, EXCEP_BUS, "bus_failed", sizeof("bus_failed"));
+	}
+
 	mutex_unlock(&ts->interface_data.bus_mutex);
 	return retval;
 }
@@ -648,7 +701,18 @@ inline int touch_i2c_write(struct i2c_client *client, char *writebuf,
 {
 	int retval;
 	u16 addr;
-	struct touchpanel_data *ts = i2c_get_clientdata(client);
+	struct touchpanel_data *ts = NULL;
+
+	if (!client) {
+		dump_stack();
+		return -1;
+	}
+
+	ts = i2c_get_clientdata(client);
+	if (!ts) {
+		dump_stack();
+		return -1;
+	}
 
 	if (!ts->interface_data.register_is_16bit) {
 		addr = writebuf[0] & 0xff;

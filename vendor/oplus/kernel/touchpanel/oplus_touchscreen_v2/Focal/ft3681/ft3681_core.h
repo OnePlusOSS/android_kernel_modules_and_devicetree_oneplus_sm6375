@@ -52,6 +52,7 @@
 #define FTS_REG_EDGE_LIMIT_BIT                  0x04
 #define FTS_REG_HEADSET_MODE_EN_BIT             0x06
 
+#define FTS_REG_MC_THGROUP                      0x80
 #define FTS_REG_INT_CNT                         0x8F
 #define FTS_REG_FLOW_WORK_CNT                   0x91
 #define FTS_REG_CHIP_ID                         0xA3
@@ -78,7 +79,6 @@
 #define FTS_REG_WORK_MODE                       0x9E
 #define FTS_REG_WORK_MODE_SNR_MODE              0x81
 #define FTS_REG_WORK_MODE_NORMAL_MODE           0x00
-#define FTS_FW_INFO                             0x96
 #define FTS_REG_TEMPERATURE                     0x97
 
 
@@ -86,7 +86,7 @@
 #define FTS_MAX_ID                              0x0A
 
 #define FTS_MAX_POINTS_LENGTH                   102 /* 2+6*10+4*10 */
-#define FTS_MAX_POINTS_SNR_LENGTH               1505 /* 2+6*10+4*10 + 2 + 2*tx*rx + (tx+rx)*2*2 + 1 + 40 */
+#define FTS_MAX_POINTS_SNR_LENGTH               1465 /* 2+6*10+4*10 + 2 + 2*tx*rx + (tx+rx)*2*2 + 1 */
 #define FTS_DIFF_BUF_LENGTH                     576 /* tx*rx */
 #define FTS_SC_BUF_LENGTH                       52 /* tx+rx */
 
@@ -250,6 +250,12 @@ struct fts_aod_info {
 	u16 aod_y;
 };
 
+typedef enum {
+	TYPE_NO_FOD_TRIGGER = 0,
+	TYPE_SMALL_FOD_TRIGGER,
+	TYPE_FOD_TRIGGER,
+} fod_trigger_type;
+
 struct ftxxxx_proc {
 	struct proc_dir_entry *proc_entry;
 	u8 opmode;
@@ -328,6 +334,12 @@ struct chip_data_ft3681 {
 	bool snr_is_reading;
 	bool snr_read_support;
 	bool snr_data_is_ready;
+
+	bool is_in_water;
+	fod_trigger_type fod_trigger;
+
+	bool charger_connected;
+	struct monitor_data     *monitor_data;
 };
 
 

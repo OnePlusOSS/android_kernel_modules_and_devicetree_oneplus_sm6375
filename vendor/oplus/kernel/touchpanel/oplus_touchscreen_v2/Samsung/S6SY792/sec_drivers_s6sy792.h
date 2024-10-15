@@ -9,6 +9,7 @@
 /*********PART1:Head files**********************/
 #include <linux/i2c.h>
 #include "../sec_common.h"
+#include "../../touchpanel_prevention/touchpanel_prevention.h"
 
 /*********PART2:Define Area**********************/
 #define GESTURE_DOUBLECLICK                     0x25
@@ -313,4 +314,8 @@ struct chip_data_s6sy792 {
 	uint32_t readselfbytes;
 };
 
+struct sec_support_grip_zone {
+	char                            name[GRIP_TAG_SIZE];
+	int                             (*handle_func) (struct chip_data_s6sy792 *chip_info, struct grip_zone_area *grip_zone, bool enable);
+};
 #endif

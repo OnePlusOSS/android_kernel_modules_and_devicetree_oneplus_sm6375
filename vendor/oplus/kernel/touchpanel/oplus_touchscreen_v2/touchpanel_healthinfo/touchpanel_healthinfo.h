@@ -67,7 +67,6 @@
 typedef enum {
 	HEALTH_TOUCH = 0,
 	HEALTH_GESTURE,
-	HEALTH_GESTURE_READ,
 	HEALTH_FINGERPRINT,
 	HEALTH_FACE_DETECT,
 	HEALTH_REPORT,
@@ -97,8 +96,6 @@ int tp_healthinfo_report(void *tp_monitor_data, healthinfo_type type,
 			void *value);
 
 int tp_healthinfo_read(struct seq_file *s, void *tp_monitor_data);
-
-int tp_healthinfo_clear(void *tp_monitor_data);
 
 int tp_healthinfo_init(struct device *dev, void *tp_monitor_data);
 
