@@ -1,0 +1,10 @@
+/dts-v1/;
+/plugin/;
+#include <dt-bindings/oplus/hw-id.h>
+#include "../blair-audio-mtp.dts"
+#include "blair_audio_overlay_common.dtsi"
+#include "avatar-m_23091_audio_overlay_common_evt2.dtsi"
+/ {
+        oplus,project-id = <23091>;
+        oplus,hw-id = <OPLUS_EVT2 OPLUS_DVT2 OPLUS_PVT1>;
+};

@@ -1,0 +1,16 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-camry-overlay-common.dtsi"
+#include "oplus_chg/oplus-chg-23881.dtsi"
+#include "sensor/camry-sensor-23071.dtsi"
+#include "tp/camry-oplus-tp-23071-extra-T1.dtsi"
+#include "nfc/camry-23882-nfc-pn560.dtsi"
+#include <dt-bindings/oplus/hw-id.h>
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI,camry europe 23882 T1";
+	oplus,project-id = <23881>;
+	oplus,region-id = <3>;
+	oplus,hw-id = <OPLUS_T1>;
+};

@@ -1,0 +1,14 @@
+/dts-v1/;
+/plugin/;
+
+#include "blair-avatar-m-overlay-common.dtsi"
+#include "oplus_chg/oplus-chg-23291.dtsi"
+#include "sensor/avatar-m-sensor-23291.dtsi"
+#include "oplus_camera_pmic/aw37004.dtsi"
+#include "oplus_breathing/avatar-m-breathing_leds.dtsi"
+
+/ {
+	model = "Qualcomm Technologies, Inc. Blair QRD NOPMI,Avatar-M india 23291";
+	oplus,project-id = <23291>;
+	oplus,region-id = <2>;
+};

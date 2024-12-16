@@ -1,0 +1,141 @@
+&soc {
+	cam_csiphy0: qcom,csiphy0 {
+		cell-index = <0>;
+		compatible = "qcom,csiphy-v1.2.5", "qcom,csiphy";
+		reg = <0x05C52000 0x2000>;
+		reg-names = "csiphy";
+		reg-cam-base = <0x52000>;
+		interrupts = <GIC_SPI 72 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "csiphy";
+		regulator-names = "gdscr", "mipi-csi-vdd1",
+			"mipi-csi-vdd2";
+		gdscr-supply = <&gcc_camss_top_gdsc>;
+		mipi-csi-vdd1-supply = <&L18A>;
+		mipi-csi-vdd2-supply = <&L22A>;
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <0 880000 1200000>;
+		rgltr-max-voltage = <0 1049000 1305000>;
+		rgltr-load-current = <0 0 15900 8900>;
+		clocks = <&gcc GCC_CAMSS_TFE_CPHY_RX_CLK_SRC>,
+			<&gcc GCC_CAMSS_CPHY_0_CLK>,
+			<&gcc GCC_CAMSS_CSI0PHYTIMER_CLK_SRC>,
+			<&gcc GCC_CAMSS_CSI0PHYTIMER_CLK>;
+		clock-names = "cphy_rx_clk_src",
+			"csiphy0_clk",
+			"csi0phytimer_clk_src",
+			"csi0phytimer_clk";
+		src-clock-name = "csi0phytimer_clk_src";
+		clock-cntl-level = "svs", "svs_l1", "nominal", "turbo";
+		clock-rates =
+			<240000000 0 200000000 0>,
+			<341330000 0 200000000 0>,
+			<341330000 0 268800000 0>,
+			<384000000 0 268800000 0>;
+		status = "ok";
+	};
+
+	cam_csiphy1: qcom,csiphy1 {
+		cell-index = <1>;
+		compatible = "qcom,csiphy-v1.2.5", "qcom,csiphy";
+		reg = <0x05C54000 0x2000>;
+		reg-names = "csiphy";
+		reg-cam-base = <0x54000>;
+		interrupts = <GIC_SPI 73 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "csiphy";
+		regulator-names = "gdscr", "mipi-csi-vdd1",
+			"mipi-csi-vdd2";
+		gdscr-supply = <&gcc_camss_top_gdsc>;
+		mipi-csi-vdd1-supply = <&L18A>;
+		mipi-csi-vdd2-supply = <&L22A>;
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <0 880000 1200000>;
+		rgltr-max-voltage = <0 1049000 1305000>;
+		rgltr-load-current = <0 15900 8900>;
+		clocks = <&gcc GCC_CAMSS_TFE_CPHY_RX_CLK_SRC>,
+			<&gcc GCC_CAMSS_CPHY_1_CLK>,
+			<&gcc GCC_CAMSS_CSI1PHYTIMER_CLK_SRC>,
+			<&gcc GCC_CAMSS_CSI1PHYTIMER_CLK>;
+		clock-names = "cphy_rx_clk_src",
+			"csiphy1_clk",
+			"csi1phytimer_clk_src",
+			"csi1phytimer_clk";
+		src-clock-name = "csi1phytimer_clk_src";
+		clock-cntl-level = "svs", "svs_l1", "nominal", "turbo";
+		clock-rates =
+			<240000000 0 200000000 0>,
+			<341330000 0 200000000 0>,
+			<341330000 0 268800000 0>,
+			<384000000 0 268800000 0>;
+		status = "ok";
+	};
+
+	cam_csiphy2: qcom,csiphy2 {
+		cell-index = <2>;
+		compatible = "qcom,csiphy-v1.2.5", "qcom,csiphy";
+		reg = <0x05C56000 0x2000>;
+		reg-names = "csiphy";
+		reg-cam-base = <0x56000>;
+		interrupts = <GIC_SPI 74 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "csiphy";
+		regulator-names = "gdscr", "mipi-csi-vdd1",
+			"mipi-csi-vdd2";
+		gdscr-supply = <&gcc_camss_top_gdsc>;
+		mipi-csi-vdd1-supply = <&L18A>;
+		mipi-csi-vdd2-supply = <&L22A>;
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <0 880000 1200000>;
+		rgltr-max-voltage = <0 1049000 1305000>;
+		rgltr-load-current = <0 15900 8900>;
+		clocks = <&gcc GCC_CAMSS_TFE_CPHY_RX_CLK_SRC>,
+			<&gcc GCC_CAMSS_CPHY_2_CLK>,
+			<&gcc GCC_CAMSS_CSI2PHYTIMER_CLK_SRC>,
+			<&gcc GCC_CAMSS_CSI2PHYTIMER_CLK>;
+		clock-names = "cphy_rx_clk_src",
+				"csiphy2_clk",
+				"csi2phytimer_clk_src",
+				"csi2phytimer_clk";
+		src-clock-name = "csi2phytimer_clk_src";
+		clock-cntl-level = "svs", "svs_l1", "nominal", "turbo";
+		clock-rates =
+			<240000000 0 200000000 0>,
+			<341330000 0 200000000 0>,
+			<341330000 0 268800000 0>,
+			<384000000 0 268800000 0>;
+		status = "ok";
+	};
+
+	cam_csiphy3: qcom,csiphy3 {
+		cell-index = <3>;
+		compatible = "qcom,csiphy-v1.2.5", "qcom,csiphy";
+		reg = <0x05C58000 0x2000>;
+		reg-names = "csiphy";
+		reg-cam-base = <0x58000>;
+		interrupts = <GIC_SPI 312 IRQ_TYPE_EDGE_RISING>;
+		interrupt-names = "csiphy";
+		regulator-names = "gdscr", "mipi-csi-vdd1",
+			"mipi-csi-vdd2";
+		gdscr-supply = <&gcc_camss_top_gdsc>;
+		mipi-csi-vdd1-supply = <&L18A>;
+		mipi-csi-vdd2-supply = <&L22A>;
+		rgltr-cntrl-support;
+		rgltr-min-voltage = <0 880000 1200000>;
+		rgltr-max-voltage = <0 1049000 1305000>;
+		rgltr-load-current = <0 15900 8900>;
+		clocks = <&gcc GCC_CAMSS_TFE_CPHY_RX_CLK_SRC>,
+			<&gcc GCC_CAMSS_CPHY_3_CLK>,
+			<&gcc GCC_CAMSS_CSI3PHYTIMER_CLK_SRC>,
+			<&gcc GCC_CAMSS_CSI3PHYTIMER_CLK>;
+		clock-names = "cphy_rx_clk_src",
+				"csiphy3_clk",
+				"csi3phytimer_clk_src",
+				"csi3phytimer_clk";
+		src-clock-name = "csi3phytimer_clk_src";
+		clock-cntl-level = "svs", "svs_l1", "nominal", "turbo";
+		clock-rates =
+			<240000000 0 200000000 0>,
+			<341330000 0 200000000 0>,
+			<341330000 0 268800000 0>,
+			<384000000 0 268800000 0>;
+		status = "ok";
+	};
+};

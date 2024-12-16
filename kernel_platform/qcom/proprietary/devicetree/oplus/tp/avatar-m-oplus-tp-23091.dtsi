@@ -1,0 +1,480 @@
+&soc {
+	gpio_keys {
+		compatible = "gpio-keys";
+		label = "gpio-keys";
+		pinctrl-names = "default";
+		pinctrl-1 = <&key_vol_down>;
+		/* using volume down config update the default value */
+		vol_up {
+			status="disabled";
+		};
+		vol_down {
+			label = "volume_down";
+			gpios = <&pmr735a_gpios 1 GPIO_ACTIVE_LOW>;
+			linux,input-type = <1>;
+			linux,code = <KEY_VOLUMEDOWN>;
+			gpio-key,wakeup;
+			debounce-interval = <32>;
+			linux,can-disable;
+		};
+	};
+};
+&pmr735a_gpios {
+	key_vol_down {
+		key_vol_down: key_vol_down {
+			pins = "gpio1";
+			function = "normal";
+			input-enable;
+			bias-pull-up;
+			power-source = <1>;
+		};
+	};
+};
+
+&spmi_bus {
+	qcom,pm6125@0 {
+		qcom,power-on@800 {
+			resin {
+				linux,code = <KEY_VOLUMEUP>;
+				debounce = <31250>;
+			};
+			pwrkey {
+				debounce = <31250>;
+			};
+		};
+	};
+};
+
+&soc {
+	devinfo_cadillac {
+		compatible = "oplus-devinfo";
+		pinctrl-names = "default", "sleep", "active", "idle";
+		pinctrl-0 = <&hw_pins_default>;
+		pinctrl-1 = <&aboard_pin_gpio0_sleep>;
+		pinctrl-2 = <&aboard_pin_gpio0_active>;
+		pinctrl-3 = <&aboard_pin_gpio0_idle>;
+
+		main-sub {
+			compatible = "hw-match, main-sub";
+			use_tristate_gpio;
+			aboard-gpio0 = <&tlmm 90 0>;
+			aboard-patterns = <0 0>;	/*0[high-resistance] 1[pull-down] 2[pull-up]*/
+			/*region id*/
+			//region-patterns = <1 2>;	/*1[CN] 2[IN] 3[EU] 4[US]*/
+			/*main board*/
+			match-projects = <23091 23291>;
+		};
+	};
+
+	oplus_sim_detect {
+		compatible = "oplus, sim_detect";
+		Hw,sim_det = <&tlmm 82 0>;
+	};
+};
+
+&tlmm {
+	aboard_pin {
+		hw_pins_default:hw_pins_default {
+		};
+
+		aboard_pin_gpio0_sleep:aboard_pin_gpio0_sleep {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				drive-strength = <2>;
+				bias-pull-down;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_active:aboard_pin_gpio0_active {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				drive-strength = <2>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+
+		aboard_pin_gpio0_idle:aboard_pin_gpio0_idle {
+			mux {
+				pins = "gpio90";
+				function = "gpio";
+			};
+			config {
+				pins = "gpio90";
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+};
+
+&qupv3_se8_i2c {
+	status = "disabled";
+};
+
+&qupv3_se0_i2c {
+	status = "disabled";
+};
+
+&qupv3_se0_spi {
+	/delete-property/ pinctrl-0;
+	/delete-property/ pinctrl-1;
+	pinctrl-0 = <&qupv3_se0_spi_active &qupv3_se0_spi_cs_active>;
+	pinctrl-1 = <&qupv3_se0_spi_sleep &qupv3_se0_spi_cs_sleep>;
+};
+
+&qupv3_se0_spi {
+    status = "ok";
+    #address-cells = <1>;
+    #size-cells = <0>;
+
+    focaltech@0{
+        compatible = "focaltech-FT3683g";
+        reg = <0x0>;
+        chip-name = "FT3683G";
+        status = "ok";
+
+        spi-max-frequency = <12000000>;
+
+        /* Interrupt && Irq-gpio */
+        interrupt-parent = <&tlmm>;
+        interrupts = <22  0x2002>;
+        irq-gpio = <&tlmm 22 0x2002>;
+        reset-gpio = <&tlmm 21 0x1>;
+
+        /* Power Config */
+        enable2v8_gpio = <&tlmm 102 0x1>;
+        //enable1v8_gpio = <&tlmm 97 0x1>;
+        //vdd_2v8-supply = <&L3C>;
+        vcc_1v8-supply = <&L13A>;
+        vdd_2v8_volt = <3300000>;
+
+        /* Other HW Resource */
+        pinctrl-names = "default";
+        pinctrl-0 = <&ts_oplus_pins_default>;
+
+        touchpanel,max-num-support = <10>;
+        touchpanel,tx-rx-num = <17 37>;
+        touchpanel,panel-coords = <17280 38592>;
+        touchpanel,display-coords = <1080 2412>;
+        touchpanel,touchmajor-limit = <128 216>;
+        touchpanel,smooth-level = <0 110 115 120 140 155>;
+		touchpanel,smooth-level-charging = <0 110 115 120 140 155>;
+		touchpanel,sensitive-level = <0 19 16 13 11 10>;
+        touchpanel,high-frame-rate-time = <60>;
+        touchpanel,single-optimized-time = <8>;
+
+        panel_type = <3 7 3>;
+        // type of tp_dev ,TP-BOE = 3;  TP-Tianma = 7 ,TP-SAMSUNG = 8;
+        firmware_name = "0xAC170", "0xAC16900", "0xAC170";
+        platform_support_project = <23091 23291>;
+        platform_support_project_dir = <23091 23091>;
+        platform_support_project_commandline = "mdss_dsi_ac172_p_3_a0004_cmd","mdss_dsi_ac172_p_7_a0001_cmd","mdss_dsi_panel_ac172_p_3_a0023_cmd";
+
+        /* SW Support Feature Control */
+        sportify_aod_gesture_support;
+        irq_need_dev_resume_ok;
+        black_gesture_support;
+        fw_edge_limit_support;
+        pressure_report_support;
+        charger_pump_support;
+        game_switch_support;
+        smart_gesture_support;
+        fw_update_app_support;
+        health_monitor_support;
+        fingerprint_underscreen_support;
+        black_gesture_indep_support;
+        exception_upload_support;
+        //esd_handle_support;
+        //new_set_irq_wake_support;
+        // focalt x8 resolution config
+        //high_resolution_support;
+        //high_resolution_support_x8;
+        //switch_game_rate_support;
+        palm_to_sleep_support;
+        disable_suspend_irq_handler_support;
+        report_rate_game_value = <0x02>;
+        tp_data_record_support;
+        temperature_detect_shellback_support;
+	fingerprint_not_report_in_suspend;
+	fp_disable_after_resume;
+
+        /*
+            *Virtual Key Config:
+            *1:touchpanel,button-type: <virtualkey_type  supportted_button-map>
+            *virtualkey_type:
+            *Type 1: using board_properties
+            *Type 2: using same IC (button zone&& touch zone are seprate)
+            *Type 3: using diffrent IC (button zone&& touch zone are seprate)
+            *Type 4: No need of virtual key process
+            *supportted_button-map:select|menu|home|back
+            *
+            *2:touchpanel,button-map
+            *type (X1,Y1)(X2,Y2)(X3,Y3)(Width_X,Hight_Y)--Only when button-type is 0
+            */
+        touchpanel,button-type = <4>;
+        touchpanel.button-TRx = <0 0>;
+    };
+};
+//#include "camry-23071-nt36672c-tp.dtsi"
+
+&tlmm {
+	qupv3_se0_spi_pins: qupv3_se0_spi_pins {
+		qupv3_se0_spi_active: qupv3_se0_spi_active {
+			mux {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				function = "qup00";
+			};
+
+			config {
+				pins = "gpio0", "gpio1",
+						"gpio2";
+				drive-strength = <4>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se0_spi_sleep: qupv3_se0_spi_sleep {
+				mux {
+					pins = "gpio0", "gpio1",
+							"gpio2";
+					function = "gpio";
+				};
+
+				config {
+					pins = "gpio0", "gpio1",
+							"gpio2";
+					drive-strength = <4>;
+					bias-disable;
+				};
+		};
+
+		qupv3_se0_spi_cs_active: qupv3_se0_spi_cs_active {
+			mux {
+				pins = "gpio3";
+				function = "qup00";
+			};
+
+			config {
+				pins ="gpio3";
+				drive-strength = <4>;
+				bias-disable;
+			};
+		};
+
+		qupv3_se0_spi_cs_sleep: qupv3_se0_spi_cs_sleep {
+			mux {
+				pins = "gpio3";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <4>;
+				bias-disable;
+				output-high;
+			};
+		};
+	};
+};
+
+&tlmm {
+	ts_oplus_pins_default: pins_default {
+	};
+
+	ts_oplus_int_active {
+		ts_oplus_int_active: ts_int_active {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <4>;
+				bias-disable;
+				input-enable;
+			};
+		};
+	};
+
+	ts_oplus_reset_active {
+		ts_oplus_reset_active: ts_reset_active {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <4>;
+				output-high;
+				bias-pull-up;
+			};
+		};
+	};
+
+	ts_oplus_int_suspend {
+		ts_oplus_int_suspend: ts_int_suspend {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <2>;
+				bias-pull-down;
+			};
+		};
+	};
+
+	ts_oplus_reset_suspend {
+		ts_oplus_reset_suspend: ts_reset_suspend {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
+	};
+
+	ts_oplus_pin_set_high {
+		ts_oplus_pin_set_high: ts_cs_high {
+			mux {
+				pins = "gpio3";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <8>;
+				output-high;
+				bias-pull-up;
+			};
+		};
+	};
+
+	ts_oplus_pin_set_low {
+		ts_oplus_pin_set_low: ts_cs_low {
+			mux {
+				pins = "gpio3";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio3";
+				drive-strength = <2>;
+				output-low;
+				bias-pull-down;
+			};
+		};
+	};
+
+	fts_oplus_int_active {
+		fts_oplus_int_active: ts_int_active {
+			mux {
+				pins = "gpio22";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio22";
+				drive-strength = <8>;
+				bias-pull-up;
+				input-enable;
+			};
+		};
+	};
+
+	fts_oplus_reset_active {
+		fts_oplus_reset_active: ts_reset_active {
+			mux {
+				pins = "gpio21";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio21";
+				drive-strength = <8>;
+				output-low;
+				bias-disable;
+			};
+		};
+	};
+};
+
+//Liu.Xu 2021/0926 add for disable wake-up function of NC-GPIO
+&tlmm {
+	/* delete gpio114 for wifi ant swap */
+	gpio_wakeup: gpio_wakeup {
+		compatible = "gpio_wakeup";
+		gpio_table = <2 3 6 12 33 38 56 57 88 90 91 92 99 102 108 113 115 116
+                              7 8 9 48 51 59 84 85 86 107 117 118 152 153 154 155>;
+	};
+};
+
+//BSP.CHG.Basic@Add for vibrator
+&soc {
+	qcom,vibrator@5300 {
+		compatible = "qcom,qpnp-vibrator-ldo";
+		reg = <0x5300 0x100>;
+		qcom,vib-ldo-volt-uv = <3000000>;
+		qcom,disable-overdrive;
+		qcom,vib-type = <1>;	/*0:ldo 1:gpio*/
+		status = "okay";
+
+		qcom,vibrator_switch-gpio = <&tlmm 106 0x00>;
+		pinctrl-names = "vib_on_high", "vib_off_low";
+		pinctrl-0 = <&vib_on_high>;
+		pinctrl-1 = <&vib_off_low >;
+	};
+};
+
+&tlmm {
+	ap_vibr_pins: ap_vibr_pins{
+		vib_on_high: vib_on_high{
+			mux {
+				pins = "gpio106";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio106";
+				drive-strength = <2>;
+				bias-disable;
+				output-high;
+			};
+		};
+
+		vib_off_low: vib_off_low{
+			mux {
+				pins = "gpio106";
+				function = "gpio";
+			};
+
+			config {
+				pins = "gpio106";
+				drive-strength = <2>;
+				bias-disable;
+				output-low;
+			};
+		};
+	};
+};
