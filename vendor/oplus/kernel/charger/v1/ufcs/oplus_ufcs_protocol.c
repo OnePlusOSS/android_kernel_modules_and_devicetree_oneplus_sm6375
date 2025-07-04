@@ -2292,7 +2292,7 @@ static int oplus_ufcs_protocol_check_adapter_error(void)
 
 	if (len != ERROR_INFO_LEN) {
 		ufcs_err("len = %d", len);
-		rc = oplus_ufcs_protocol_send_refuse(REASON_CMD_NOT_DETECT);
+		oplus_ufcs_protocol_send_refuse(REASON_CMD_NOT_DETECT);
 		return rc;
 	}
 
@@ -2301,14 +2301,10 @@ static int oplus_ufcs_protocol_check_adapter_error(void)
 		return rc;
 	}
 
-	if (error_type == ERROR_INFO_NUM)
-		return rc;
-
 	for (; error_type < ERROR_INFO_NUM; error_type = find_first_bit(&error_msg, ERROR_INFO_NUM)) {
 		ufcs_err("receive adapter error! msg = %s\n", adapter_error_info[error_type]);
 		clear_bit(error_type, &error_msg);
-		if (error_type == ERROR_INFO_NUM)
-			return -EINVAL;
+		return -EINVAL;
 	}
 	return rc;
 }
@@ -2486,10 +2482,11 @@ static void oplus_ufcs_protocol_reply_adapter(struct work_struct *work)
 	if (rc < 0)
 		ufcs_err("reply to adapter failed!\n");
 
-	if (chip->soft_reset)
+	if (chip->soft_reset) {
 		rc = oplus_ufcs_protocol_send_soft_reset();
-	if (rc < 0)
-		ufcs_err("failed to send soft reset!\n");
+		if (rc < 0)
+			ufcs_err("failed to send soft reset!\n");
+	}
 
 	oplus_ufcs_protocol_set_awake(chip, false);
 	oplus_ufcs_protocol_release_chip_lock();

@@ -600,7 +600,7 @@ static ssize_t kmalloc_debug_create_write(struct file *file, const char __user *
 	kbuf[len] = '\0';
 
 	ret = kstrtol(kbuf, 10, &size);
-	if (ret)
+	if (ret || (size <= 0) || (size > KMALLOC_MAX_CACHE_SIZE))
 		return -EINVAL;
 
 	index = kmalloc_index(size);

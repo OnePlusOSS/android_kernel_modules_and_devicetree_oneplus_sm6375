@@ -103,7 +103,7 @@ const char * const protocol_name_str[] = {
 	[CHG_PROTOCOL_QC]	= "QC",
 };
 
-static const char *get_protocol_name_str(enum oplus_chg_protocol_type type)
+const char *get_protocol_name_str(enum oplus_chg_protocol_type type)
 {
 	if (type < 0 || type >= CHG_PROTOCOL_MAX)
 		return "Unknown";

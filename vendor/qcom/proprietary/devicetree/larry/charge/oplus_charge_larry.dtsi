@@ -376,6 +376,7 @@
 		compatible = "sc,sc8547-master";
 		reg = <0x6f>;
 
+		ovp_reg = <0x36>;
 		qcom,irq_gpio = <&tlmm 100 0x00>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <100 0>;
@@ -622,6 +623,7 @@
 		compatible = "oplus,nu2112a-ufcs";
 		reg = <0x6e 0>;
 
+		ovp_reg = <0x36>;
 		qcom,irq_gpio = <&tlmm 100 0x00>;
 		interrupt-parent = <&tlmm>;
 		interrupts = <100 0>;

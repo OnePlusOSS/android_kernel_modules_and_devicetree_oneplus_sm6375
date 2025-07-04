@@ -455,9 +455,10 @@ static inline bool pd_process_cable_ctrl_msg_accept(
 		pe_transit_ready_state(pd_port);
 		return true;
 #endif	/* CONFIG_PD_DFP_RESET_CABLE */
-	}
 
-	return false;
+	default:
+		return false;
+	}
 }
 #endif	/* CONFIG_USB_PD_RESET_CABLE */
 

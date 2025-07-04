@@ -1258,7 +1258,7 @@ static int sgm7220_create_device(struct sgm7220_info *info)
 
 	dev_set_drvdata(info->dev_t, info);
 
-	while ((bool)(attr = *attrs++)) {
+	for (attr = *attrs; attr != NULL; attr = *(++attrs)) {
 		err = device_create_file(info->dev_t, attr);
 		if (err) {
 			device_destroy(info->device_class, 0);
@@ -1273,7 +1273,7 @@ static void sgm7220_destroy_device(struct sgm7220_info *info)
 	struct device_attribute **attrs = usb_typec_attributes;
 	struct device_attribute *attr;
 
-	while ((bool)(attr = *attrs++))
+	for (attr = *attrs; attr != NULL; attr = *(++attrs))
 		device_remove_file(info->dev_t, attr);
 
 	device_destroy(info->device_class, 0);
