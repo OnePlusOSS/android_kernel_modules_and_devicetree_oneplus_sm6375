@@ -12,4 +12,5 @@
 	oplus,project-id = <23881>;
 	oplus,region-id = <3>;
 	oplus,hw-id = <OPLUS_DVT1 OPLUS_PVT1>;
+	oplus,nv-id = "10100111";
 };

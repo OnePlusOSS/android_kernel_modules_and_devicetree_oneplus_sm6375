@@ -398,7 +398,7 @@ void sc8571_slave_b_cfg_bypass(void)
 	sc8571_write_byte(SC8571_REG_0E, 0x58); /*0X0E VAC1OVP=12V. VAC2OVP=22V*/
 
 	sc8571_write_byte(SC8571_REG_10, 0x30); /*0X30 enable watchdog*/
-	sc8571_write_byte(SC8571_REG_11, 0x5C); /*0X11 DIS_BATOVP_ALM*/
+	sc8571_write_byte(SC8571_REG_11, 0x58); /*0X11 DIS_BATOVP_ALM*/
 	sc8571_write_byte(SC8571_REG_12, 0x60); /*0X12 DIS_BATOCP*/
 	sc8571_write_byte(SC8571_REG_23, 0x80); /*0X23 DIS_BATOCP_ALM*/
 	sc8571_write_byte(SC8571_REG_24, 0x0E); /*0X24 DIS_BATOCP_ALM*/
@@ -592,9 +592,12 @@ static int sc8571_slave_b_parse_dt(struct chip_sc8571 *chip)
 	return 0;
 }
 
-
+#if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 6, 0))
+static int sc8571_slave_b_probe(struct i2c_client *client)
+#else
 static int sc8571_slave_b_probe(struct i2c_client *client,
                                 const struct i2c_device_id *id)
+#endif
 {
 	struct chip_sc8571 *chip;
 

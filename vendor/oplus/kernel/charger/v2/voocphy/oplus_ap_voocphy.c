@@ -35,6 +35,7 @@
 #endif
 #include <oplus_chg_dual_chan.h>
 #include <oplus_chg_comm.h>
+#include <oplus_chg_plc.h>
 
 enum {
 	FASTCHG_TEMP_RANGE_INIT = 0,
@@ -81,7 +82,7 @@ enum {
 };
 
 #define AP_ALLOW_FASTCHG	(1 << 6)
-#define TARGET_VOL_OFFSET_THR	250
+#define TARGET_VOL_OFFSET_THR	1000 /* considering adapter error and adc error, changing from 0.25A to 1A */
 #define TARGET_CURR_OFFSET_THR  500
 #define DELAY_TEMP_MONITOR_COUNTS		2
 #define trace_oplus_tp_sched_change_ux(x, y)
@@ -1398,6 +1399,26 @@ static int oplus_voocphy_init_vooc(struct oplus_voocphy_manager *chip)
 	return rc;
 }
 
+static int oplus_voocphy_upload_cp_error(struct oplus_voocphy_manager *chip, int err_type)
+{
+	int rc = 0;
+
+	if (!chip) {
+		voocphy_err("oplus_voocphy_manager chip null\n");
+		return rc;
+	}
+
+	if (chip->ops && chip->ops->upload_cp_error) {
+		rc = chip->ops->upload_cp_error(chip, err_type);
+		if (rc < 0) {
+			voocphy_info("upload cp error failed, rc=%d.\n", rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
 static int oplus_voocphy_print_dbg_info(struct oplus_voocphy_manager *chip)
 {
 	int i = 0;
@@ -1405,6 +1426,8 @@ static int oplus_voocphy_print_dbg_info(struct oplus_voocphy_manager *chip)
 	bool fg_dump_reg = false;
 	bool fg_send_info = false;
 	int report_flag = 0;
+	int error_type = 0;
+	int rc = 0;
 
 	if (chip->ops && chip->ops->check_cp_int_happened &&
 	    chip->ops->check_cp_int_happened(chip, &fg_dump_reg, &fg_send_info))
@@ -1454,6 +1477,15 @@ chg_exception:
 		}
 		if (fg_send_info) {
 			report_flag |= (1 << 4);
+			if (chip->ops && chip->ops->get_cp_error_type) {
+				rc = chip->ops->get_cp_error_type(chip, &error_type);
+				if (0 == rc) {
+					voocphy_err("upload cp err, error_type = %d\n", error_type);
+					oplus_voocphy_upload_cp_error(chip, error_type);
+				} else {
+					voocphy_err("get cp err type failed, rc = %d\n", rc);
+				}
+			}
 		}
 	}
 
@@ -4890,13 +4922,13 @@ static int oplus_voocphy_ap_event_handle(struct device *dev, unsigned long data)
 	return status;
 }
 
-static void oplus_voocphy_set_chg_pmid2out(bool enable)
+static void oplus_voocphy_set_chg_pmid2out(bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->ops && g_voocphy_chip->ops->set_chg_pmid2out) {
-		g_voocphy_chip->ops->set_chg_pmid2out(enable);
+		g_voocphy_chip->ops->set_chg_pmid2out(enable, reason);
 	} else {
 		return;
 	}
@@ -4914,13 +4946,13 @@ static bool oplus_voocphy_get_chg_pmid2out(void)
 	}
 }
 
-static void oplus_voocphy_set_slave_chg_pmid2out(bool enable)
+static void oplus_voocphy_set_slave_chg_pmid2out(bool enable, int reason)
 {
 	if (!g_voocphy_chip)
 		return;
 
 	if (g_voocphy_chip->slave_ops && g_voocphy_chip->slave_ops->set_chg_pmid2out) {
-		g_voocphy_chip->slave_ops->set_chg_pmid2out(enable);
+		g_voocphy_chip->slave_ops->set_chg_pmid2out(enable, reason);
 	} else {
 		return;
 	}
@@ -5055,14 +5087,20 @@ static int oplus_voocphy_curr_event_handle(struct device *dev, unsigned long dat
 			pmid2out_status = oplus_voocphy_get_chg_pmid2out();
 			voocphy_err("pmid2out master = %d, chip->master_cp_ichg = %d\n", pmid2out_status, chip->master_cp_ichg);
 			if (pmid2out_status == false && chip->master_cp_ichg > 500) {
-				voocphy_err("IBUS > 500mA set 0x5 to 0x33!\n");
-				oplus_voocphy_set_chg_pmid2out(true);
+				voocphy_err("IBUS > 500mA set 0x5 !\n");
+				if (chip->adapter_type == ADAPTER_SVOOC)
+					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_SVOOC);
+				else
+					oplus_voocphy_set_chg_pmid2out(true, SETTING_REASON_VOOC);
 			}
 			pmid2out_status = oplus_voocphy_get_slave_chg_pmid2out();
 			voocphy_err("pmid2out slave = %d, chip->cp_ichg = %d\n", pmid2out_status, chip->cp_ichg);
 			if (pmid2out_status == false && (chip->cp_ichg - chip->master_cp_ichg)> 500) {
-				voocphy_err("slave cp IBUS > 500mA set 0x5 to 0x33!\n");
-				oplus_voocphy_set_slave_chg_pmid2out(true);
+				voocphy_err("slave cp IBUS > 500mA set 0x5 !\n");
+				if (chip->adapter_type == ADAPTER_SVOOC)
+					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_SVOOC);
+				else
+					oplus_voocphy_set_slave_chg_pmid2out(true, SETTING_REASON_VOOC);
 			}
 		}
 	}
@@ -5114,6 +5152,7 @@ static int oplus_voocphy_curr_event_handle(struct device *dev, unsigned long dat
 			temp_current = vbat_temp_cur;
 			temp_vbatt = chip->gauge_vbatt;
 		}
+
 		if (oplus_get_chg_spec_version() == OPLUS_CHG_SPEC_VER_V3P7) {
 			rc = oplus_chg_strategy_get_data(chip->svooc_lcf_strategy, &ret_val);
 			if (chip->parallel_charge_support && chip->svooc_sub_lcf_strategy)
@@ -5572,6 +5611,9 @@ static int oplus_voocphy_safe_event_handle(struct device *dev, unsigned long dat
 		voocphy_info( "oplus_voocphy_safe_event_handle ignore");
 		return status;
 	}
+
+	if (chip->plc_status == PLC_STATUS_ENABLE)
+		return oplus_voocphy_monitor_timer_start(chip, VOOC_THREAD_TIMER_SAFE, VOOC_SAFE_EVENT_TIME);
 
 	if (chip->fastchg_timeout_time)
 		chip->fastchg_timeout_time--;
@@ -7311,6 +7353,51 @@ static struct hw_vphy_info ap_vinf = {
 #include "../config/dynamic_cfg/oplus_voocphy_cfg.c"
 #endif
 
+static void oplus_voocphy_plc_subs_callback(struct mms_subscribe *subs,
+					    enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_voocphy_manager *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case PLC_ITEM_STATUS:
+			oplus_mms_get_item_data(chip->plc_topic, id, &data,
+						false);
+			chip->plc_status = data.intval;
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_voocphy_subscribe_plc_topic(struct oplus_mms *topic,
+					      void *prv_data)
+{
+	struct oplus_voocphy_manager *chip = prv_data;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	chip->plc_topic = topic;
+	chip->plc_subs = oplus_mms_subscribe(chip->plc_topic, chip,
+					     oplus_voocphy_plc_subs_callback,
+					     "voocphy");
+	if (IS_ERR_OR_NULL(chip->plc_subs)) {
+		chg_err("subscribe plc topic error, rc=%ld\n",
+			PTR_ERR(chip->plc_subs));
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->plc_topic, PLC_ITEM_STATUS, &data, true);
+	if (rc >= 0)
+		chip->plc_status = data.intval;
+}
+
 int oplus_register_voocphy(struct oplus_voocphy_manager *chip)
 {
 	int ret;
@@ -7330,6 +7417,8 @@ int oplus_register_voocphy(struct oplus_voocphy_manager *chip)
 #if IS_ENABLED(CONFIG_OPLUS_DYNAMIC_CONFIG_CHARGER)
 	(void)oplus_voocphy_reg_debug_config(chip);
 #endif
+
+	oplus_mms_wait_topic("plc", oplus_voocphy_subscribe_plc_topic, chip);
 
 	return 0;
 }

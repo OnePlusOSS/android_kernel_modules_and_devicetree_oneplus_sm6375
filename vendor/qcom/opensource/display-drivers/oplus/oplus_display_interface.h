@@ -20,6 +20,7 @@
 #define OPLUS_PINCTRL_NAMES_COUNT 2
 #define OPLUS_BACKLIGHT_WINDOW_SIZE 5
 #define REG_SIZE 256
+#define PULSE_MUTUAL_FPS_LOWER_LIMIT -100
 
 extern const char *cmd_set_prop_map[DSI_CMD_SET_MAX];
 
@@ -208,5 +209,8 @@ int oplus_panel_pwm_switch_cmdq_delay_handle(void *dsi_panel, enum dsi_cmd_set_t
  */
 int oplus_panel_send_asynchronous_cmd(void);
 int oplus_set_osc_status(struct drm_encoder *drm_enc);
+
+int oplus_panel_cmd_reg_replace_specific_row(struct dsi_panel *panel, struct dsi_display_mode *mode,
+		enum dsi_cmd_set_type type, u8 *replace_reg, size_t replace_reg_len, u32 row);
 #endif /* __OPLUS_DISPLAY_INTERFACE_H__ */
 

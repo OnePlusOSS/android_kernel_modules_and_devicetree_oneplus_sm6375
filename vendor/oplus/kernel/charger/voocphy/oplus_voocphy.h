@@ -653,6 +653,11 @@ struct oplus_voocphy_manager {
 	unsigned int current_bcc;
 	unsigned int current_batt_temp;
 	unsigned int current_slow_chg;
+	unsigned int current_full_limit;
+	unsigned int pre_current_full_limit;
+	bool dchg;
+	bool full_limit_curr;
+	unsigned int full_limit_count;
 	unsigned char ap_need_change_current;
 	unsigned char adjust_curr;
 	unsigned char adjust_fail_cnt;
@@ -840,6 +845,7 @@ struct oplus_voocphy_manager {
 	unsigned int vooc_ntime_full_voltage;
 	int ovp_reg;
 	int ocp_reg;
+	int reg_ctrl_1;
 	int adapter_check_vooc_head_count;
 	int adapter_check_cmd_data_count;
 
@@ -956,6 +962,7 @@ struct oplus_voocphy_operations {
 	int (*clk_err_clean)(void);
 	int (*set_ufcs_enable)(struct oplus_voocphy_manager *chip, bool enable);
 	void (*set_fix_mode)(bool val);
+	int (*set_sstimeout_ucp_enable)(struct oplus_voocphy_manager *chip, bool enable);
 };
 
 #define VOOCPHY_LOG_BUF_LEN 1024
@@ -988,6 +995,7 @@ void oplus_voocphy_set_switch_mode(int mode);
 void oplus_voocphy_switch_fast_chg(void);
 int oplus_voocphy_reset_voocphy(void);
 int oplus_voocphy_get_switch_gpio_val(void);
+int oplus_voocphy_get_copycat_type(void);
 int oplus_voocphy_get_mos_state(void);
 bool oplus_voocphy_get_fastchg_ing(void);
 bool oplus_voocphy_get_fastchg_commu_ing(void);
@@ -1071,4 +1079,5 @@ int oplus_voocphy_get_cp_enable(void);
 int oplus_voocphy_set_ufcs_enable(bool enable);
 bool oplus_get_vooc_direct_charge_en(void);
 bool oplus_voocphy_get_vbatt_ovp_status(void);
+int oplus_voocphy_set_sstimeout_ucp_enable(bool enable);
 #endif /* _OPLUS_VOOCPHY_H_ */

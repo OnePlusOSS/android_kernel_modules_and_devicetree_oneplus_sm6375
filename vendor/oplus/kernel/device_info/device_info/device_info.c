@@ -164,7 +164,14 @@ static int devinfo_read_emmc_func(struct seq_file *s, void *v)
 		manufacture = "PHISON";
 		break;
 	case 0xD6:
-		manufacture = "HG";
+		if (NULL != strstr(mmc->card->cid.prod_name, "C9")) {
+			manufacture = "FORESEE";
+		} else {
+			manufacture = "HG";
+		}
+		break;
+	case 0xf4:
+		manufacture = "BIWIN";
 		break;
 	default:
 		printk("%s unknown mmc->card->cid.manfid is %x\n", __func__, mmc->card->cid.manfid);
@@ -1110,32 +1117,49 @@ seccess:
 static int __attribute__((__unused__)) init_ddr_vendor_size(struct device_info *dev_info)
 {
 	uint32_t ddr_type = DRAMC_TOP_TYPE_LPDDR5;
+	unsigned int rk_cnt;
 	unsigned int rk_size[DRAMC_MAX_RK];
 	char ddr_manufacture[64];
 	struct manufacture_info *info = NULL;
 	int ret = 0;
 	int i;
+	int shift;
 	struct mr_info_t *mr_info = NULL;
 	uint32_t ddr_vendor;
 	struct device_node *mem_node;
+	struct path_config {
+		const char *path;
+		int shift;
+	};
+	const struct path_config path_configs[] = {
+		{"/dramc@10230000", 2},
+		{"/soc/dramc@10230000", 2},
+		{"/dramc@1022a000", 4},
+		{"/soc/dramc@1022a000", 4},
+	};
 
 	info = (struct manufacture_info *) kzalloc(sizeof(*info), GFP_KERNEL);
 	if (!info) {
 		return -ENOMEM;
 	}
 
-	mem_node = of_find_node_by_path("/dramc@10230000");
-	if (!mem_node) {
-		pr_err("/dramc@10230000 node not found \n");
-		mem_node = of_find_node_by_path("/soc/dramc@10230000");
-		if (!mem_node) {
-			pr_err("/soc/dramc@10230000 node not found \n");
-			return -ENOENT;
+	for (int i = 0; i < ARRAY_SIZE(path_configs); i++) {
+		mem_node = of_find_node_by_path(path_configs[i].path);
+		if (mem_node) {
+			shift = path_configs[i].shift;
+			break;
 		}
+		pr_err("%s node not found\n", path_configs[i].path);
 	}
 
-	mr_info = (struct mr_info_t *)kzalloc(sizeof(struct mr_info_t) * DRAMC_MR_CNT, GFP_KERNEL);
-	ret = of_property_read_u32_array(mem_node, "mr", (unsigned int *)mr_info, (sizeof(struct mr_info_t) * DRAMC_MR_CNT) >> 2);
+	if (!mem_node) {
+		pr_err("All DRAMC nodes not found\n");
+		return -ENOENT;
+	}
+
+	mr_info = kzalloc(sizeof(struct mr_info_t) * DRAMC_MR_CNT, GFP_KERNEL);
+	ret = of_property_read_u32_array(mem_node, "mr", (unsigned int *)mr_info, (sizeof(struct mr_info_t) * DRAMC_MR_CNT) >> shift);
+
 	if (ret < 0) {
 		pr_err("mr read error \n");
 		return -ENOENT;
@@ -1144,14 +1168,25 @@ static int __attribute__((__unused__)) init_ddr_vendor_size(struct device_info *
 	for (i=0; i < DRAMC_MR_CNT; i++) {
 		pr_err("mr_info:idx= %d, value, %x \n", mr_info[i].mr_index, mr_info[i].mr_value);
 		if(mr_info[i].mr_index == 5) {
-			ddr_vendor = mr_info[i].mr_value;
+			ddr_vendor = mr_info[i].mr_value & 0xFF;
 		}
+	}
+
+	ret = of_property_read_u32(mem_node, "rk_cnt", &rk_cnt);
+	if (ret < 0) {
+		pr_err("rk_cnt read error \n");
+		return -ENOENT;
 	}
 
 	ret = of_property_read_u32_array(mem_node, "rk_size", rk_size, 2);
 	if (ret < 0) {
 		pr_err("rk_size read error \n");
 		return -ENOENT;
+	}
+
+	for (i = 0; i < DRAMC_MAX_RK; i++) {
+		if(i + 1 > rk_cnt)
+			rk_size[i] = 0;
 	}
 
 	ret = of_property_read_u32(mem_node, "dram_type", &ddr_type);
@@ -1307,6 +1342,11 @@ devinfo_probe(struct platform_device *pdev)
 
 	platform_set_drvdata(pdev, dev_info);
 
+	/* To tablet devices, no gpios for sub-main match. Just init ddr */
+	if (of_property_read_bool(pdev->dev.of_node, "without-hw-match")) {
+		goto ddr_init;
+	}
+
 	/*parse dts first */
 	parse_gpio_dts(&pdev->dev, dev_info);
 
@@ -1316,6 +1356,7 @@ devinfo_probe(struct platform_device *pdev)
 	set_gpios_active(dev_info);
 	init_other_hw_ids(pdev);
 	set_gpios_sleep(dev_info);
+ddr_init:
 #if !(defined(CONFIG_MTK_PLATFORM) || defined(CONFIG_OPLUS_DEVICE_INFO_MTK_PLATFORM))
 	/*register oplus special node*/
 	init_ddr_type(dev_info);

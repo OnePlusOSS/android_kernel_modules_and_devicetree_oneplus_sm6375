@@ -44,6 +44,8 @@ int global_sched_assist_enabled;
 EXPORT_SYMBOL(global_sched_assist_enabled);
 int global_sched_assist_scene;
 EXPORT_SYMBOL(global_sched_assist_scene);
+int global_lowend_plat_opt;
+EXPORT_SYMBOL(global_lowend_plat_opt);
 
 pid_t global_ux_task_pid = -1;
 pid_t global_im_flag_pid = -1;
@@ -208,7 +210,6 @@ static ssize_t proc_ux_task_write(struct file *file, const char __user *buf,
 	int ux_state = 0, ux_orig = 0;
 	int err = 0;
 	int is_hint_message = 0;
-	static DEFINE_MUTEX(sa_ux_mutex);
 
 	int uid = task_uid(current).val;
 
@@ -256,7 +257,6 @@ static ssize_t proc_ux_task_write(struct file *file, const char __user *buf,
 	if (err)
 		return err;
 
-	mutex_lock(&sa_ux_mutex);
 	if (!strncmp(opt_str[OPT_STR_TYPE], "p", 1) && (ux_state >= 0)) {
 		struct task_struct *ux_task = NULL;
 
@@ -268,6 +268,10 @@ static ssize_t proc_ux_task_write(struct file *file, const char __user *buf,
 			rcu_read_unlock();
 
 			if (ux_task) {
+				if (im_mali(ux_task->comm)) {
+					put_task_struct(ux_task);
+					return -EFAULT;
+				}
 				ux_orig = oplus_get_ux_state(ux_task);
 
 				if ((ux_state & SA_OPT_SET) && oplus_get_inherit_ux(ux_task)) {
@@ -302,7 +306,6 @@ static ssize_t proc_ux_task_write(struct file *file, const char __user *buf,
 		}
 	}
 
-	mutex_unlock(&sa_ux_mutex);
 	return count;
 }
 
@@ -483,6 +486,11 @@ static long write_task_ux(pid_t pid, pid_t tid, int ux_value, bool fromSysOrApp)
 	if (ux_task) {
 		bool need_update = true;
 		int ux_state = -1;
+
+		if (im_mali(ux_task->comm)) {
+			put_task_struct(ux_task);
+			return -EPERM;
+		}
 
 		/* clear inherit type if ux is intentional set */
 		if ((ux_value & (SA_OPT_SET|SA_OPT_RESET)) && oplus_get_inherit_ux(ux_task)) {
@@ -675,8 +683,8 @@ static int im_flag_set_handle(struct task_struct *task, int im_flag)
 	}
 #ifdef CONFIG_LOCKING_PROTECT
 	/* Optimization of ams/wsm lock contention */
-	if ((!(test_bit(IM_FLAG_SS_LOCK_OWNER, &old_im) && (im_flag == IM_FLAG_SS_LOCK_OWNER))) ||
-		((test_bit(IM_FLAG_SS_LOCK_OWNER, &old_im) && im_flag == (IM_FLAG_SS_LOCK_OWNER+IM_FLAG_CLEAR))))
+	if (((!test_bit(IM_FLAG_SS_LOCK_OWNER, &old_im)) && (im_flag == IM_FLAG_SS_LOCK_OWNER)) ||
+		((test_bit(IM_FLAG_SS_LOCK_OWNER, &old_im)) && (im_flag == (IM_FLAG_SS_LOCK_OWNER+IM_FLAG_CLEAR))))
 		LOCKING_CALL_OP(opt_ss_lock_contention, task, old_im, im_flag);
 #endif
 	return 0;
@@ -1082,6 +1090,41 @@ static ssize_t proc_ncsw_read(struct file *file, char __user *buf,
 }
 #endif
 
+static ssize_t proc_lowend_plat_opt_write(struct file *file, const char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	char buffer[8];
+	int err, val;
+
+	memset(buffer, 0, sizeof(buffer));
+
+	if (count > sizeof(buffer) - 1)
+		count = sizeof(buffer) - 1;
+
+	if (copy_from_user(buffer, buf, count))
+		return -EFAULT;
+
+	buffer[count] = '\0';
+	err = kstrtoint(strstrip(buffer), 10, &val);
+	if (err)
+		return err;
+
+	global_lowend_plat_opt = val;
+
+	return count;
+}
+
+static ssize_t proc_lowend_plat_opt_read(struct file *file, char __user *buf,
+		size_t count, loff_t *ppos)
+{
+	char buffer[32];
+	size_t len = 0;
+
+	len = snprintf(buffer, sizeof(buffer), "lowend_plat_opt=%d\n", global_lowend_plat_opt);
+
+	return simple_read_from_buffer(buf, count, ppos, buffer, len);
+}
+
 static const struct proc_ops proc_sched_assist_enabled_fops = {
 	.proc_write		= proc_sched_assist_enabled_write,
 	.proc_read		= proc_sched_assist_enabled_read,
@@ -1152,6 +1195,12 @@ static const struct proc_ops proc_ncsw_fops = {
 	.proc_read		= proc_ncsw_read,
 };
 #endif
+
+static const struct proc_ops proc_lowend_plat_opt_fops = {
+	.proc_write		= proc_lowend_plat_opt_write,
+	.proc_read		= proc_lowend_plat_opt_read,
+	.proc_lseek		= default_llseek,
+};
 
 #if IS_ENABLED(CONFIG_OPLUS_FEATURE_LOADBALANCE)
 extern void oplus_lb_proc_init(struct proc_dir_entry *pde);
@@ -1249,6 +1298,12 @@ int oplus_sched_assist_proc_init(void)
 	}
 #endif
 
+	proc_node = proc_create("lowend_plat_opt", 0666, d_sched_assist, &proc_lowend_plat_opt_fops);
+	if (!proc_node) {
+		ux_err("failed to create proc node lowend_plat_opt\n");
+		remove_proc_entry("lowend_plat_opt", d_sched_assist);
+	}
+
 	device_node = of_find_compatible_node(NULL, NULL, "oplus,sched_assit");
 	if (device_node)
 		disable_setting = 0;
@@ -1295,6 +1350,7 @@ void oplus_sched_assist_proc_deinit(void)
 	remove_proc_entry("ux_task", d_sched_assist);
 	remove_proc_entry("sched_assist_scene", d_sched_assist);
 	remove_proc_entry("sched_assist_enabled", d_sched_assist);
+	remove_proc_entry("lowend_plat_opt", d_sched_assist);
 	remove_proc_entry(OPLUS_SCHEDASSIST_PROC_DIR, d_oplus_scheduler);
 	remove_proc_entry(OPLUS_SCHEDULER_PROC_DIR, NULL);
 }

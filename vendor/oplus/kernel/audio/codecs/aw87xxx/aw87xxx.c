@@ -502,6 +502,8 @@ uint8_t aw_speaker_get_mode(struct oplus_speaker_device *speaker_device)
 			return AW_CTOS_PROFILE_MUSIC;
 		case WORK_MODE_RIGHT:
 			return AW_CTOS_PROFILE_MUSIC;
+		case WORK_MODE_LEFT_VOICE:
+			return AW_CTOS_PROFILE_VOICE;
 		default:
 			return -EINVAL;
 	}
@@ -588,7 +590,7 @@ int aw87xxx_voltage_set(struct oplus_speaker_device *speaker_device, int level)
 		aw87xxx_spk_low_voltage_status = VOL_STATUS_LOW;
 	}
 
-	pr_info("%s: level = %ld\n", __func__, level);
+	pr_info("%s: level = %d\n", __func__, level);
 	return 0;
 }
 
@@ -1960,8 +1962,12 @@ static struct aw87xxx *aw87xxx_malloc_init(struct i2c_client *client)
 	return aw87xxx;
 }
 
+#ifdef AW_KERNEL_VER_OVER_6_6_0
+static int aw87xxx_i2c_probe(struct i2c_client *client)
+#else
 static int aw87xxx_i2c_probe(struct i2c_client *client,
 				const struct i2c_device_id *id)
+#endif
 {
 	struct device_node *dev_node = client->dev.of_node;
 	struct aw87xxx *aw87xxx = NULL;
@@ -2047,7 +2053,7 @@ static int aw87xxx_i2c_probe(struct i2c_client *client,
 			spk_dev_node = oplus_speaker_pa_register(speaker_device);
 			aw87xxx->oplus_dev_node = spk_dev_node;
 		} else {
-			pr_err("%s, %s, No memory!\n", __func__, __LINE__);
+			pr_err("%s, %d, No memory!\n", __func__, __LINE__);
 		}
 	} else {
 		// there is AW87xxx, we only need the speaker protection algorithm

@@ -80,14 +80,6 @@ _platform_map = {
             },
         ],
         "dtbo_list": [
-            {"name": "waffle-22825-pineapple-overlay.dtbo"},
-            {"name": "waffle-22825-pineapple-overlay-EVB.dtbo"},
-            {"name": "waffle-22825-pineapple-overlay-EVT1.dtbo"},
-            {"name": "waffle-22877-pineapple-overlay.dtbo"},
-            {"name": "waffle-22877-pineapple-overlay-EVB.dtbo"},
-            {"name": "waffle-22877-pineapple-overlay-EVT1.dtbo"},
-            {"name": "pangu-22111-pineapple-overlay.dtbo"},
-            {"name": "enzo-23607-pineapple-overlay.dtbo"},
         ],
     },
     "niobe": {
@@ -158,8 +150,7 @@ _platform_map = {
             {"name": "blair-camry-23071-overlay.dtbo"},
             {"name": "blair-camry-23881-overlay.dtbo"},
             {"name": "blair-camry-23882-overlay.dtbo"},
-            {"name": "blair-avatar-m-23091-overlay.dtbo"},
-            {"name": "blair-avatar-m-23291-overlay.dtbo"},
+            {"name": "blair-camry-23882-overlay-EU.dtbo"},
 
         ],
     },

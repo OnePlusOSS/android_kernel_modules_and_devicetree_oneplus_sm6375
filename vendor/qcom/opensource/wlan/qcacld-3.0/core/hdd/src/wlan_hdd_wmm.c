@@ -1804,6 +1804,9 @@ hdd_check_and_upgrade_udp_qos(struct hdd_adapter *adapter,
 	}
 }
 
+#ifdef CONFIG_ANDROID_KABI_RESERVE
+#define TX_STREAM_ACCELERATE_FLAG (0x3)
+#endif
 /**
  * hdd_wmm_classify_pkt() - Function which will classify an OS packet
  * into a WMM AC based on DSCP
@@ -1930,6 +1933,12 @@ void hdd_wmm_classify_pkt(struct hdd_adapter *adapter,
 	 * less than the configured threshold.
 	 */
 	hdd_check_and_upgrade_udp_qos(adapter, skb, user_pri);
+
+#ifdef CONFIG_ANDROID_KABI_RESERVE
+	if ((skb->android_kabi_reserved2 & TX_STREAM_ACCELERATE_FLAG) == TX_STREAM_ACCELERATE_FLAG) {
+		*user_pri = SME_QOS_WMM_UP_VO;
+	}
+#endif
 
 #ifdef HDD_WMM_DEBUG
 	hdd_debug("tos is %d, dscp is %d, up is %d", tos, dscp, *user_pri);

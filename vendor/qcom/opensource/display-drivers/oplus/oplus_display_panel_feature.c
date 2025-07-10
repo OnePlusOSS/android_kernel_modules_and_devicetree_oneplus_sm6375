@@ -139,6 +139,20 @@ int oplus_panel_features_config(struct dsi_panel *panel)
 	LCD_INFO("oplus,dsi-dimming-setting-before-bl-0-enable: %s\n",
 			panel->oplus_priv.dimming_setting_before_bl_0_enable ? "true" : "false");
 
+	panel->oplus_priv.vidmode_backlight_async_wait_enable = utils->read_bool(utils->data,
+			"oplus,dsi-vidmode-backlight-async-wait-enable");
+	LCD_INFO("oplus,dsi-vidmode-backlight-async-wait-enable: %s\n",
+			panel->oplus_priv.vidmode_backlight_async_wait_enable ? "true" : "false");
+
+	panel->oplus_priv.set_backlight_not_do_esd_reg_read_enable = utils->read_bool(utils->data,
+			"oplus,dsi-set-backlight-not-do-esd-reg-read-enable");
+	LCD_INFO("oplus,dsi-set-backlight-not-do-esd-reg-read-enable: %s\n",
+			panel->oplus_priv.set_backlight_not_do_esd_reg_read_enable ? "true" : "false");
+
+	panel->oplus_priv.gamma_compensation_support = utils->read_bool(utils->data,
+			"oplus,gamma-compensation-support");
+	LCD_INFO("oplus,gamma-compensation-support: %s\n",
+			panel->oplus_priv.gamma_compensation_support ? "true" : "false");
 	return 0;
 }
 
@@ -180,7 +194,10 @@ void oplus_panel_switch_vid_mode(struct dsi_display *display, struct dsi_display
 	int rc = 0;
 	int refresh_rate = 0;
 	int dsi_cmd_vid_switch = 0;
+	int te_count = 1;
+	u32 current_vblank;
 	struct dsi_panel *panel = NULL;
+	struct drm_crtc *crtc = NULL;
 
 	if (!display && !display->panel) {
 		LCD_INFO("display/panel is null!\n");
@@ -193,6 +210,7 @@ void oplus_panel_switch_vid_mode(struct dsi_display *display, struct dsi_display
 	}
 
 	panel = display->panel;
+	crtc = display->drm_conn->state->crtc;
 	if (panel->power_mode == SDE_MODE_DPMS_OFF) {
 		LCD_INFO("display panel in off status\n");
 		return;
@@ -221,6 +239,25 @@ void oplus_panel_switch_vid_mode(struct dsi_display *display, struct dsi_display
 	if (panel->esd_config.status_mode == ESD_MODE_PANEL_MIPI_ERR_FLAG) {
 		/*skip esd check when vedio mode switch timming gamma*/
 		atomic_set(&panel->esd_pending, 1);
+	}
+
+	if (!strcmp(panel->name, "AB964 p 1 A0017 dsc video mode panel")) {
+		SDE_ATRACE_BEGIN("wait_for_vblank");
+		current_vblank = drm_crtc_vblank_count(crtc);
+		current_vblank = current_vblank + te_count;
+		if (refresh_rate == 120) {
+			rc = wait_event_timeout(*drm_crtc_vblank_waitqueue(crtc), current_vblank == drm_crtc_vblank_count(crtc), usecs_to_jiffies(4100 + 100));
+			if (!rc) {
+				OFP_ERR("crtc wait_event_timeout\n");
+			}
+		}
+		if (refresh_rate == 60) {
+			rc = wait_event_timeout(*drm_crtc_vblank_waitqueue(crtc), current_vblank == drm_crtc_vblank_count(crtc), usecs_to_jiffies(8300 + 100));
+			if (!rc) {
+				OFP_ERR("crtc wait_event_timeout\n");
+			}
+		}
+		SDE_ATRACE_END("wait_for_vblank");
 	}
 
 	SDE_ATRACE_BEGIN("oplus_panel_switch_vid_mode");

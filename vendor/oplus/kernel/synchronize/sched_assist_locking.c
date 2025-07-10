@@ -471,8 +471,13 @@ static void update_locking_time(unsigned long time, bool in_cs)
 	 * We are not really acquired the lock and going into critical section,
 	 * do not update locking depth.
 	 */
-	if (!in_cs)
+	if (!in_cs) {
+		if (ots->lk_tick_hit >= 2)
+			ots->lk_tick_hit = 0;
+
 		goto set;
+	}
+
 
 	if (locking_depth_skip(ots->locking_depth)) {
 		/*

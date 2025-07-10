@@ -36,6 +36,7 @@ int debug_init(void);
 
 bool get_task_name(pid_t pid, struct task_struct *in_task, char *name);
 void ui_assist_threads_wake_stat(struct task_struct *task);
+bool task_is_fair(struct task_struct *task);
 
 /*----------------------------- early detect start -----------------------------*/
 enum ED_BOOST_TYPE {

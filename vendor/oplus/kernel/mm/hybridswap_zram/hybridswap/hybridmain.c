@@ -407,12 +407,6 @@ static int register_all_hooks(void)
 
 	/* tune_scan_type_hook */
 	REGISTER_HOOK(tune_scan_type);
-
-	rc = register_trace_android_vh_shrink_slab_bypass(hybridswapd_ops->vh_shrink_slab_bypass, NULL);
-	if (rc) {
-		log_err("register shrink_slab_bypass failed\n");
-		goto err_out_shrink_slab_bypass;
-	}
 #endif
 #ifdef CONFIG_HYBRIDSWAP_CORE
 	/* mem_cgroup_id_remove_hook */
@@ -428,8 +422,6 @@ ERROR_OUT(shrink_node_memcgs):
 ERROR_OUT(mem_cgroup_id_remove):
 #endif
 #ifdef CONFIG_HYBRIDSWAP_SWAPD
-	unregister_trace_android_vh_shrink_slab_bypass(hybridswapd_ops->vh_shrink_slab_bypass, NULL);
-err_out_shrink_slab_bypass:
 	UNREGISTER_HOOK(tune_scan_type);
 ERROR_OUT(tune_scan_type):
 	/* UNREGISTER_HOOK(rmqueue);
@@ -1137,6 +1129,25 @@ int mem_cgroup_app_uid_write(struct cgroup_subsys_state *css,
 	return 0;
 }
 
+s64 get_mem_cgroup_app_uid(struct mem_cgroup *memcg)
+{
+	if (!MEMCGRP_ITEM_DATA(memcg))
+		return -EPERM;
+
+	return atomic64_read(&MEMCGRP_ITEM(memcg, app_uid));
+}
+EXPORT_SYMBOL_GPL(get_mem_cgroup_app_uid);
+
+char *get_mem_cgroup_app_name(struct mem_cgroup *memcg)
+{
+	char *name = "null";
+	if (!MEMCGRP_ITEM_DATA(memcg))
+		return name;
+
+	return MEMCGRP_ITEM(memcg, name);
+}
+EXPORT_SYMBOL_GPL(get_mem_cgroup_app_name);
+
 static s64 mem_cgroup_app_uid_read(struct cgroup_subsys_state *css, struct cftype *cft)
 {
 	struct mem_cgroup *memcg = mem_cgroup_from_css(css);
@@ -1249,12 +1260,14 @@ unlock:
 
 	return memcg;
 }
+EXPORT_SYMBOL_GPL(get_next_memcg);
 
 void get_next_memcg_break(struct mem_cgroup *memcg)
 {
 	if (memcg)
 		css_put(&memcg->css);
 }
+EXPORT_SYMBOL_GPL(get_next_memcg_break);
 
 static struct cftype mem_cgroup_hybridswap_legacy_files[] = {
 	{

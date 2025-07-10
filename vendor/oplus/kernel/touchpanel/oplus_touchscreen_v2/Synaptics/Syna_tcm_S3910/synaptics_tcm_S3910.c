@@ -3844,6 +3844,9 @@ static fw_check_state syna_fw_check(void *chip_data,
 	TP_INFO(tcm_info->tp_index, "fw id %d, custom config id 0x%s\n", panel_data->tp_fw,
 		 tcm_info->app_info.customer_config_id);
 
+        tcm_info->app_info.customer_config_id[9] = '\0';
+	TP_INFO(tcm_info->tp_index, "custom config id 0x%s\n", tcm_info->app_info.customer_config_id);
+
 	if (strlen(tcm_info->app_info.customer_config_id) == 0) {
 		tp_healthinfo_report(tcm_info->monitor_data, HEALTH_REPORT, "fw_check_err_cfgid");
 		return FW_ABNORMAL;
@@ -5135,7 +5138,7 @@ static int syna_trx_short_test(struct seq_file *s, void *chip_data,
 			      syna_testdata->pos, "0x%02x, ", u_data8);
 
 		for (j = 0; j < 8; j++) {
-			if (1 == (u_data8 & (1 << j))) {
+			if (u_data8 & (1 << j)) {
 				TP_INFO(tcm_info->tp_index, "trx short test failed at %d bits.\n", checked_bits + 1);
 
 				if (!error_count) {

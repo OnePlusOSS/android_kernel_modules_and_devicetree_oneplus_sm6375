@@ -17,8 +17,7 @@ OPLUS_BLAIR_BOARDS += blair-larry-22821-overlay.dtbo\
                       blair-camry-23071-overlay.dtbo\
                       blair-camry-23881-overlay.dtbo\
                       blair-camry-23882-overlay.dtbo\
-                      blair-avatar-m-23091-overlay.dtbo\
-                      blair-avatar-m-23291-overlay.dtbo
+                      blair-camry-23882-overlay-EU.dtbo
 
 dtb-y += $(OPLUS_BLAIR_BOARDS) $(BLAIR_BASE_DTB) $(BLAIR_APQ_BASE_DTB)
 

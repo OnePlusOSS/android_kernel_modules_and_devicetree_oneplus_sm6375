@@ -481,23 +481,22 @@ unlock:
 	}
 }
 
-static void sched_stat_runtime_hook(void *unused, struct task_struct *p, u64 runtime, u64 vruntime)
+bool task_is_fair(struct task_struct *task)
 {
-	update_task_runtime(p, runtime);
+	if ((task->prio >= MAX_RT_PRIO) && (task->prio <= MAX_PRIO-1))
+		return true;
+	return false;
 }
 
-static void sched_stat_runtime_rt_hook(void *unused, struct task_struct *p, u64 runtime)
+static void sched_stat_runtime_hook(void *unused, struct task_struct *p, u64 runtime, u64 vruntime)
 {
 	update_task_runtime(p, runtime);
 }
 
 static void register_task_util_vendor_hooks(void)
 {
-	/* Register vender hook in kernel/sched/fair.c */
+	/* Register vender hook in kernel/sched/fair.c{rt.c|deadline.c} */
 	register_trace_sched_stat_runtime(sched_stat_runtime_hook, NULL);
-
-	/* Register vender hook in kernel/sched/rt.c */
-	register_trace_android_vh_sched_stat_runtime_rt(sched_stat_runtime_rt_hook, NULL);
 }
 
 int task_util_init(void)

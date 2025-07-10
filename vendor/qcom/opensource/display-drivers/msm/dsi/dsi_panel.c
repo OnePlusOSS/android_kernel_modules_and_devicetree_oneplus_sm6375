@@ -67,6 +67,7 @@
 #define RSCC_MODE_THRESHOLD_TIME_US 40
 #define DCS_COMMAND_THRESHOLD_TIME_US 40
 
+extern bool g_gamma_regs_read_done;
 /*#ifdef OPLUS_FEATURE_TP_BASIC*/
 extern int (*tp_gesture_enable_notifier)(unsigned int tp_index);
 extern int shutdown_flag;
@@ -2444,6 +2445,9 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-uir-loading-effect-1-command",
 	"qcom,mdss-dsi-uir-loading-effect-2-command",
 	"qcom,mdss-dsi-uir-loading-effect-3-command",
+	"oplus,dsi-panel-gamma-compensation-page0-command",
+	"oplus,dsi-panel-gamma-compensation-page1-command",
+	"oplus,dsi-panel-gamma-compensation-command",
 #endif /* OPLUS_FEATURE_DISPLAY */
 };
 
@@ -2662,6 +2666,9 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-uir-loading-effect-1-command-state",
 	"qcom,mdss-dsi-uir-loading-effect-2-command-state",
 	"qcom,mdss-dsi-uir-loading-effect-3-command-state",
+	"oplus,dsi-panel-gamma-compensation-page0-command-state",
+	"oplus,dsi-panel-gamma-compensation-page1-command-state",
+	"oplus,dsi-panel-gamma-compensation-command-state",
 #endif /* OPLUS_FEATURE_DISPLAY */
 
 };

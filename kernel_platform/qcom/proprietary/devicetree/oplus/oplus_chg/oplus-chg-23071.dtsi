@@ -183,7 +183,7 @@
 		oplus,copycat_identify_algorithm = <2>;
 		oplus,copycat-vooc-count = <4>;
 
-		ovp_reg = <22>;
+		ovp_reg = <0x36>;
 		ocp_reg = <17>;
 
 		qcom,slave_cp_enable_thr = <1900>;		//2000-100mA
@@ -430,6 +430,7 @@
 		rt-tcpc,vconn_supply  = <1>;  /* 0: Never, 1: Always, */
 					      /* 2: EMarkOnly, 3: StartOnly */
 		/* rt-tcpc,disable_pe; */
+		support_role_swap_delay;
 		rt1711pd,intr_gpio = <&tlmm 124 0x0>;
 		rt1711pd,intr_gpio_num = <124>;
 		rt,disable_irq_reset;

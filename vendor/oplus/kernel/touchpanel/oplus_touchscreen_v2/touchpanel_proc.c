@@ -966,6 +966,289 @@ static ssize_t proc_game_switch_read(struct file *file, char __user *buffer,
 
 DECLARE_PROC_OPS(proc_game_switch_fops, simple_open, proc_game_switch_read, proc_game_switch_write, NULL);
 
+/*proc_aiunit_game_info game hot zone
+ * Input:
+ * input '0': disable aiunit game
+ * input '0.9580078,146.5039,277.66113,299.4336,428.9795,10,1,fangxiang_fz 0.98095703,50.410156,1887.4512,156.46484,1993.7988,10,2,jineng ' enable
+ * 0.9580078,146.5039,277.66113,299.4336,428.9795,10      ,1               ,fangxiang_fz
+ * score    ,left    ,top      ,right   ,bottom  ,gametype,aiunit_game_type,not used
+ */
+
+static ssize_t proc_aiunit_game_info_write(struct file *file,
+				const char __user *buffer, size_t count, loff_t *ppos)
+{
+	int set_num = 0;
+	int get_num = 0;
+	int one_frame_buf_len = 0;
+	int ret = 0;
+	int one_float_len = 0;
+	int gametype = 0;
+	int aiunit_game_type = 0;
+	int score = 0;
+	int left = 0;
+	int top = 0;
+	int right = 0;
+	int bottom = 0;
+	int num = 0;
+	int num2 = 0;
+	int one_frame_num[7] = {0};
+	u8 x_resolution_multiple = 16;
+	u8 y_resolution_multiple = 16;
+	u8 data_error = 0;
+	u8 *get_all_buff = NULL;
+	u8 *one_frame_buf_str = NULL;
+	u8 *next_frame_buf_str = NULL;
+	u8 *one_float_str = NULL;
+	u8 *next_float_str = NULL;
+	u8 *tmp_str = NULL;
+	u8 *one_frame_buf_char_str = NULL;
+	struct tp_aiunit_game_info *tp_set_aiunit_game_info = NULL;
+	struct tp_aiunit_game_info *tp_get_aiunit_game_info = NULL;
+	char one_frame_buf[100] = {0};
+	char one_frame_buf_char[100] = {0};
+	char *buf = NULL;
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	buf = kzalloc(PAGESIZE * 6, GFP_KERNEL);
+	if (buf == NULL) {
+		TS_TP_INFO("aiunit game info buf kzalloc error!\n");
+		goto write_exit;
+	}
+
+	if (!ts) {
+		TPD_INFO("%s: ts is NULL\n", __func__);
+		goto write_exit;
+	}
+
+	ts->aiunit_game_get_num = 0;
+	ts->aiunit_game_set_num = 0;
+	tp_set_aiunit_game_info = ts->tp_ic_aiunit_game_info;
+	tp_get_aiunit_game_info = ts->tp_get_aiunit_game_info;
+
+	if (ts->resolution_info.LCD_WIDTH && ts->resolution_info.LCD_HEIGHT) {
+		x_resolution_multiple = ts->resolution_info.max_x / ts->resolution_info.LCD_WIDTH;
+		y_resolution_multiple = ts->resolution_info.max_y / ts->resolution_info.LCD_HEIGHT;
+	}
+
+	touchpanel_trusted_touch_completion(ts);
+	if (!ts->ts_ops->aiunit_game_info || !ts->aiunit_game_info_support) {
+		TS_TP_INFO("%s: not support tp aiunit game info callback\n", __func__);
+		goto write_exit;
+	}
+
+	if (count > PAGESIZE * 6 - 1) {
+		TS_TP_INFO("%s: input string is too long. error, error.\n", __func__);
+		goto write_exit;
+	}
+	tp_copy_from_user(buf, PAGESIZE * 6, buffer, count, PAGESIZE * 6 - 1);
+	buf[PAGESIZE * 6 - 1] = '\0';
+	memset(tp_set_aiunit_game_info, 0, MAX_AIUNIT_SET_NUM * sizeof(struct tp_aiunit_game_info));
+	memset(tp_get_aiunit_game_info, 0, MAX_AIUNIT_GET_NUM * sizeof(struct tp_aiunit_game_info));
+	get_all_buff = &buf[0];
+	TS_TP_INFO("%s: input all buf:%s size:%lu. \n", __func__, get_all_buff, count);
+	if (count == 1 && buf[0] == '0') {
+		TS_TP_INFO("%s:aiunit game exit.\n", __func__);
+		ts->aiunit_game_enable = 0;
+		mutex_lock(&ts->mutex);
+		ts->ts_ops->aiunit_game_info(ts->chip_data);
+		mutex_unlock(&ts->mutex);
+		goto write_exit;
+	}
+	for (get_num = 0; get_num < MAX_AIUNIT_GET_NUM; get_num ++) {
+		if (data_error != 0) {
+			TS_TP_INFO("%s: getnum end:%d error:%u.\n", __func__, get_num, data_error);
+			set_num = 0;
+			break;
+		}
+		next_frame_buf_str = strchr(get_all_buff, ' ');
+		if (next_frame_buf_str == NULL) {
+			one_frame_buf_len = strlen(get_all_buff);
+			TS_TP_INFO("input data end. buffer len:%d.\n", one_frame_buf_len);
+		} else {
+			one_frame_buf_len = next_frame_buf_str - get_all_buff;
+			TS_TP_INFO("input data continue. buffer len:%d.\n", one_frame_buf_len);
+		}
+
+		if (one_frame_buf_len < 20 || one_frame_buf_len >= 80) {
+			data_error = 1;
+			TS_TP_INFO("%s:input error buf_len:%d. \n", __func__, one_frame_buf_len);
+			set_num = 0;
+			break;
+		}
+
+		strncpy(one_frame_buf, get_all_buff, one_frame_buf_len);
+		one_frame_buf[one_frame_buf_len] = '\0';
+
+		TS_TP_INFO("%s: one_frame_buf:%s.\n", __func__, one_frame_buf);
+		one_frame_buf_str = &one_frame_buf[0];
+		one_float_str = &one_frame_buf[0];
+
+		for (num = 0; num < 7; num++) {
+			next_float_str = strchr(one_float_str, ',');
+			if (next_float_str == NULL) {
+				data_error = 2;
+				break;
+			}
+			one_float_len = next_float_str - one_float_str;
+			if (one_float_len >= 20) {
+				data_error = 3;
+				break;
+			}
+			strncpy(one_frame_buf_char, one_float_str, one_float_len);
+			one_frame_buf_char[one_float_len]= '\0';
+			TS_TP_INFO("%s: one_frame_buf_char:%s.\n", __func__, one_frame_buf_char);
+
+			one_frame_buf_char_str = &one_frame_buf_char[0];
+			tmp_str = strchr(one_frame_buf_char_str, '.');
+			if (tmp_str == NULL) {
+				ret = sscanf(one_frame_buf_char_str, "%d", &one_frame_num[num]);
+				if (ret == 1) {
+					TS_TP_INFO("%s: one_frame_buf_char_str:%d.\n", __func__, one_frame_num[num]);
+				} else {
+					TS_TP_INFO("%s: ret:%d.\n", __func__, ret);
+					data_error = 4;
+				}
+			} else {
+				ret = sscanf(one_frame_buf_char_str, "%d.%d", &one_frame_num[num], &num2);
+				if (ret == 2) {
+					TS_TP_INFO("%s: one_frame_buf_char_str:%d,%d.\n", __func__, one_frame_num[num], num2);
+				} else {
+					TS_TP_INFO("%s: ret:%d.\n", __func__, ret);
+					data_error = 4;
+				}
+			}
+
+			if (strlen(one_float_str) - one_float_len > 1) {
+				one_float_str = &one_float_str[one_float_len + 1];
+			}
+		}
+
+		score = one_frame_num[0];
+		left = one_frame_num[1];
+		top = one_frame_num[2];
+		right = one_frame_num[3];
+		bottom = one_frame_num[4];
+		gametype = one_frame_num[5];
+		aiunit_game_type = one_frame_num[6];
+
+		if (data_error == 0 && left >= 0 && left < right && right <= ts->resolution_info.LCD_WIDTH \
+				&& top >= 0 && top < bottom && bottom <= ts->resolution_info.LCD_HEIGHT \
+				&& aiunit_game_type >= 0 && aiunit_game_type < 30 \
+				&& gametype >= 0 && gametype < 255) {
+			TS_TP_INFO("%s:one frame data:%d,%d,%d,%d,%d,%d,%d.\n", __func__, score, left, top, right, bottom, gametype, aiunit_game_type);
+
+			tp_get_aiunit_game_info[get_num].gametype = (uint8_t)gametype;
+			tp_get_aiunit_game_info[get_num].aiunit_game_type = (uint8_t)aiunit_game_type;
+			tp_get_aiunit_game_info[get_num].left = (uint16_t)left;
+			tp_get_aiunit_game_info[get_num].top = (uint16_t)top;
+			tp_get_aiunit_game_info[get_num].right = (uint16_t)right;
+			tp_get_aiunit_game_info[get_num].bottom = (uint16_t)bottom;
+
+			if ((1 << aiunit_game_type) & ts->aiunit_game_valid_bits) {
+				tp_set_aiunit_game_info[set_num].gametype = (uint8_t)gametype;
+				tp_set_aiunit_game_info[set_num].aiunit_game_type = (uint8_t)aiunit_game_type;
+				tp_set_aiunit_game_info[set_num].left = (uint16_t)(left * x_resolution_multiple);
+				tp_set_aiunit_game_info[set_num].top = (uint16_t)(top * y_resolution_multiple);
+				tp_set_aiunit_game_info[set_num].right = (uint16_t)(right * x_resolution_multiple);
+				tp_set_aiunit_game_info[set_num].bottom = (uint16_t)(bottom * y_resolution_multiple);
+
+				TS_TP_INFO("%s: num:%d, type:%u,%u, size(%u,%u,%u,%u).\n", __func__, set_num, \
+						tp_set_aiunit_game_info[set_num].gametype, tp_set_aiunit_game_info[set_num].aiunit_game_type, \
+						tp_set_aiunit_game_info[set_num].left, tp_set_aiunit_game_info[set_num].top, \
+						tp_set_aiunit_game_info[set_num].right, tp_set_aiunit_game_info[set_num].bottom);
+				set_num++;
+			} else {
+				TS_TP_INFO("aiunit game type is not used.type:%d, valid_bits:%x.\n", aiunit_game_type, ts->aiunit_game_valid_bits);
+			}
+			if (set_num >= MAX_AIUNIT_SET_NUM) {
+				TS_TP_INFO("%s:already get MAX_AIUNIT_SET_NUM:%d, break.\n", __func__, MAX_AIUNIT_SET_NUM);
+				break;
+			}
+		} else {
+			TS_TP_INFO("%s:one frame data error:%d,%d,%d,%d,%d,%d,%d.\n", __func__, score, left, top, right, bottom, gametype, aiunit_game_type);
+			data_error = 1;
+			set_num = 0;
+			get_num = 0;
+			break;
+		}
+		if (next_frame_buf_str == NULL) {
+			get_num++;
+			break;
+		}
+		if (strlen(get_all_buff) - one_frame_buf_len < 20) {
+			get_num++;
+			break;
+		} else {
+			get_all_buff = &get_all_buff[one_frame_buf_len + 1];
+		}
+	}
+
+	ts->aiunit_game_get_num = get_num;
+	ts->aiunit_game_set_num = set_num;
+
+	if (data_error == 0 && set_num > 0 && ts->aiunit_game_info_support && ts->ts_ops->aiunit_game_info) {
+		ts->aiunit_game_enable = 1;
+		mutex_lock(&ts->mutex);
+		ts->ts_ops->aiunit_game_info(ts->chip_data);
+		mutex_unlock(&ts->mutex);
+	}
+
+write_exit:
+	if (buf != NULL) {
+		kfree(buf);
+	}
+
+	return count;
+}
+
+static ssize_t proc_aiunit_game_info_read(struct file *file, char __user *buffer,
+				size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	int get_num = 0;
+	int num = 0;
+	char *page = NULL;
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	page = kzalloc(MAX_AIINFO_SIZE, GFP_KERNEL);
+	if (page == NULL) {
+		TS_TP_INFO("aiunit game info page kzalloc error!\n");
+		goto read_exit;
+	}
+
+	if (!ts) {
+		snprintf(page, MAX_AIINFO_SIZE - 1, "%d\n", -1); /*no support*/
+
+	} else {
+		get_num = ts->aiunit_game_get_num;
+		if (get_num > 0 && ts->noise_level > 0) {
+			for(num = 0; num < get_num; num++) {
+				if (count > strlen(page)) {
+					snprintf(&page[0] + strlen(page), MAX_AIINFO_SIZE - strlen(page),
+							"GameInfo %d(GameType:%d HotZoneType:%d, Boarder:[%u,%u,%u,%u])\n", num,
+							ts->tp_get_aiunit_game_info[num].gametype, ts->tp_get_aiunit_game_info[num].aiunit_game_type,
+							ts->tp_get_aiunit_game_info[num].left, ts->tp_get_aiunit_game_info[num].top,
+							ts->tp_get_aiunit_game_info[num].right, ts->tp_get_aiunit_game_info[num].bottom);
+				}
+			}
+		} else {
+			snprintf(page, MAX_AIINFO_SIZE - 1, "get num:%d game mode:%d, aiunit game is null.\n", get_num, ts->noise_level);
+		}
+
+		TS_TP_INFO("%s:AIUNIT_GAME_INFO_NODE get %s\n", __func__, page);
+	}
+	ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
+
+read_exit:
+	if (page != NULL) {
+		kfree(page);
+	}
+
+	return ret;
+}
+
+DECLARE_PROC_OPS(proc_aiunit_game_info_ops, simple_open, proc_aiunit_game_info_read, proc_aiunit_game_info_write, NULL);
+
 /*irq_depth - For enable or disable irq
  * Output:
  * irq depth;
@@ -1112,6 +1395,66 @@ static ssize_t proc_hardware_control_write(struct file *file,
 }
 
 DECLARE_PROC_OPS(proc_hardware_control_fops, simple_open, proc_hardware_control_read, proc_hardware_control_write, NULL);
+
+static ssize_t proc_report_rate_test_read(struct file *file, char __user *buffer,
+				       size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	char page[PAGESIZE] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		return count;
+	}
+
+	if (ts->is_suspended) {
+		TP_INFO(ts->tp_index, "%s: tp is suspended.\n", __func__);
+		return count;
+	}
+	ts->get_frame_num = 0;
+	ts->touch_major_sum = 0;
+	ts->report_rate_testing = true;
+	usleep_range(ts->report_rate_test_time * 1000 * 1000, ts->report_rate_test_time * 1000 * 1000 + 10);
+	ts->report_rate_testing = false;
+
+	if (ts->report_rate_test_time > 0 && ts->get_frame_num > 0) {
+		snprintf(page, PAGESIZE - 1, "report frames:%u, rate:%uHZ. touch major avg:%u.\n",
+			ts->get_frame_num, ts->get_frame_num / ts->report_rate_test_time, (ts->touch_major_sum + ts->get_frame_num / 2) / ts->get_frame_num);
+		ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
+	} else {
+		TP_INFO(ts->tp_index, "%s: get_frame_num or report_rate_test_time is 0.\n", __func__);
+	}
+
+	return ret;
+}
+
+static ssize_t proc_report_rate_test_write(struct file *file,
+				     const char __user *buffer, size_t count, loff_t *ppos)
+{
+	int value = 0;
+	char buf[5] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		return count;
+	}
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 4);
+
+	if (kstrtoint(buf, 10, &value)) {
+		TP_INFO(ts->tp_index, "%s: kstrtoint error\n", __func__);
+		return count;
+	}
+	if (value > REPORT_RATE_MAX_TEST_TIME_S) {
+		TP_INFO(ts->tp_index, "%s: input test time too long:%uS, max time is:%uS. \n", __func__, value, REPORT_RATE_MAX_TEST_TIME_S);
+		value = REPORT_RATE_MAX_TEST_TIME_S;
+	}
+	TP_INFO(ts->tp_index, "%s: report rate test time set:%u. \n", __func__, value);
+	ts->report_rate_test_time = value;
+	return count;
+}
+
+DECLARE_PROC_OPS(proc_report_rate_test_fops, simple_open, proc_report_rate_test_read, proc_report_rate_test_write, NULL);
 
 static ssize_t proc_noise_modetest_read(struct file *file, char __user *buffer,
 					size_t count, loff_t *ppos)
@@ -1878,6 +2221,8 @@ static ssize_t proc_disable_touch_event_write(struct file *file, const char __us
 		return count;
 	}
 
+	TP_INFO(ts->tp_index, "%s: write value=%d\n", __func__,
+		disable_touch_event);
 	ts->disable_touch_event = disable_touch_event;
 
 	return count;
@@ -2076,15 +2421,6 @@ static ssize_t proc_aging_test_write(struct file *file,
 	}
 	touchpanel_trusted_touch_completion(ts);
 
-	if (!ts->aging_test_ops) {
-		return count;
-	}
-
-	if ((!ts->aging_test_ops->start_aging_test)
-			|| (!ts->aging_test_ops->finish_aging_test)) {
-		return count;
-	}
-
 	if (count > 2) {
 		return count;
 	}
@@ -2098,13 +2434,21 @@ static ssize_t proc_aging_test_write(struct file *file,
 
 	TP_INFO(ts->tp_index, "%s:val:%d\n", __func__, val);
 
-	mutex_lock(&ts->mutex);
-
 	if (AGING_TEST_MODE == val || NORMAL_TEST_MODE == val) {
 		ts->aging_mode = val;
-		goto EXIT;
+		return count;
 	}
 
+	if (!ts->aging_test_ops) {
+		return count;
+	}
+
+	if ((!ts->aging_test_ops->start_aging_test)
+			|| (!ts->aging_test_ops->finish_aging_test)) {
+		return count;
+	}
+
+	mutex_lock(&ts->mutex);
 	ts->aging_test = !!val;
 
 	if (ts->aging_test) {
@@ -2114,7 +2458,6 @@ static ssize_t proc_aging_test_write(struct file *file,
 		ts->aging_test_ops->finish_aging_test(ts->chip_data);
 	}
 
-EXIT:
 	mutex_unlock(&ts->mutex);
 
 	return count;
@@ -3929,9 +4272,7 @@ static ssize_t proc_force_water_mode_read(struct file *file, char __user *buffer
 DECLARE_PROC_OPS(proc_force_water_mode_fops, simple_open,
 		   proc_force_water_mode_read, proc_force_water_mode_write, NULL);
 
-
-/*proc/touchpanel/glove_mode_enable*/
-static ssize_t proc_glove_mode_write(struct file *file, const char __user *buffer,
+static ssize_t proc_pocket_prevent_mode_write(struct file *file, const char __user *buffer,
 				  size_t count, loff_t *ppos)
 {
 	int ret = 0;
@@ -3956,12 +4297,80 @@ static ssize_t proc_glove_mode_write(struct file *file, const char __user *buffe
 		return count;
 	}
 
+	ts->pocket_prevent_mode = !!value;
+
+	TP_INFO(ts->tp_index, "%s: pocket_prevent_mode value=%d\n", __func__, value);
+
+	mutex_lock(&ts->mutex);
+	ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_GLOVE, (ts->glove_enable)&&(!ts->pocket_prevent_mode));
+	if (ret < 0) {
+		TS_TP_INFO("%s, Touchpanel operate mode switch failed\n", __func__);
+	}
+	mutex_unlock(&ts->mutex);
+
+	return count;
+}
+
+static ssize_t proc_pocket_prevent_mode_read(struct file *file, char __user *buffer,
+				  size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	char page[PAGESIZE] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		snprintf(page, PAGESIZE - 1, "%d\n", -1); /*no support*/
+		TPD_INFO("ts is null.\n");
+		ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
+		return ret;
+	} else {
+		/*support*/
+		snprintf(page, PAGESIZE - 1, "%d\n", ts->pocket_prevent_mode);
+		ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
+		return ret;
+	}
+}
+
+DECLARE_PROC_OPS(proc_pocket_prevent_mode, simple_open,
+		  proc_pocket_prevent_mode_read, proc_pocket_prevent_mode_write, NULL);
+
+/*proc/touchpanel/glove_mode_enable*/
+static ssize_t proc_glove_mode_write(struct file *file, const char __user *buffer,
+				  size_t count, loff_t *ppos)
+{
+	int ret = 0;
+	int value = 0;
+	char buf[4] = {0};
+	struct touchpanel_data *ts = PDE_DATA(file_inode(file));
+
+	if (!ts) {
+		TPD_INFO("%s: ts is NULL\n", __func__);
+		return count;
+	}
+
+	if (!ts->ts_ops->mode_switch) {
+		TS_TP_INFO("not support ts_ops->mode_switch callback\n");
+		return count;
+	}
+
+	if (ts->is_suspended) {
+		TS_TP_INFO("%s: is_suspended, exit\n", __func__);
+		return count;
+	}
+
+	tp_copy_from_user(buf, sizeof(buf), buffer, count, 4);
+
+	if (kstrtoint(buf, 10, &value)) {
+		TP_INFO(ts->tp_index, "%s: kstrtoint error\n", __func__);
+		return count;
+	}
+
 	ts->glove_enable = !!value;
 
 	TP_INFO(ts->tp_index, "%s: glove_enable value=%d\n", __func__, value);
 
 	mutex_lock(&ts->mutex);
-	ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_GLOVE, ts->glove_enable);
+	ret = ts->ts_ops->mode_switch(ts->chip_data, MODE_GLOVE, (ts->glove_enable) && (!ts->pocket_prevent_mode));
 	if (ret < 0) {
 		TS_TP_INFO("%s, Touchpanel operate mode switch failed\n", __func__);
 	}
@@ -3984,10 +4393,6 @@ static ssize_t proc_glove_mode_read(struct file *file, char __user *buffer,
 		return ret;
 	} else {
 		/*support*/
-		if (!ts->ts_ops->get_glove_mode) {
-			TS_TP_INFO("not support ts_ops->get_glove_mode\n");
-			return ret;
-		}
 		snprintf(page, PAGESIZE - 1, "%d:%lld\n", ts->glove_enable, ts->monitor_data.glove_enter_count);
 		ret = simple_read_from_buffer(buffer, count, ppos, page, strlen(page));
 		return ret;
@@ -4224,6 +4629,7 @@ static int init_debug_info_proc(struct touchpanel_data *ts)
 			ts->ts_ops->force_water_mode
 		},
 		{"hardware_control", 0666, NULL, &proc_hardware_control_fops, ts, false, true},
+		{"report_rate_test", 0666, NULL, &proc_report_rate_test_fops, ts, false, true},
 	};
 
 	TP_INFO(ts->tp_index, "%s entry\n", __func__);
@@ -4378,6 +4784,9 @@ int init_touchpanel_proc_part3(struct touchpanel_data *ts, struct proc_dir_entry
 			ts->glove_mode_v2_support
 		},
 		{
+			"pocket_prevent_mode", 0666, NULL, &proc_pocket_prevent_mode, ts, false, ts->glove_mode_v2_support
+		},
+		{
 			"leather_cover_enable", 0666, NULL, &leather_cover_enable, ts, false,
 			ts->glove_mode_support
 		},
@@ -4386,6 +4795,7 @@ int init_touchpanel_proc_part3(struct touchpanel_data *ts, struct proc_dir_entry
 			ts->leather_cover_mode_support
 		},
 	};
+
 
 	for (i = 0; i < ARRAY_SIZE(tp_proc_node_part3); i++) {
 		if (tp_proc_node_part3[i].is_support) {
@@ -4481,6 +4891,9 @@ int init_touchpanel_proc(struct touchpanel_data *ts)
 		},
 
 		{"communicate_test", 0666, NULL, &tp_communicate_test_ops, ts, false, true},
+		{"aiunit_game_info", 0666, NULL, &proc_aiunit_game_info_ops, ts, false,
+			ts->aiunit_game_info_support
+		},
 	};
 
 	TP_INFO(ts->tp_index, "%s entry\n", __func__);

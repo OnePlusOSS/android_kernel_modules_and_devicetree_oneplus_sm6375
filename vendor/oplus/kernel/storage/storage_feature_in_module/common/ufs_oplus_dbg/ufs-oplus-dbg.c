@@ -139,6 +139,15 @@ void recordUniproErr(
 			rec->unipro_DME_err_cnt[ec]++;
 		}
 		break;
+	case UFS_EVT_ABORT:
+		rec->task_abort_cnt++;
+		break;
+	case UFS_EVT_HOST_RESET:
+		rec->host_reset_cnt++;
+		break;
+	case UFS_EVT_DEV_RESET:
+		rec->dev_reset_cnt++;
+		break;
 	default:
 		break;
 	}
@@ -172,6 +181,9 @@ static int record_read_func(struct seq_file *s, void *v)
 	SEQ_EASY_PRINT(ufs_bus_err_cnt);
 	SEQ_EASY_PRINT(ufs_crypto_err_cnt);
 	SEQ_EASY_PRINT(ufs_link_lost_cnt);
+	SEQ_EASY_PRINT(task_abort_cnt);
+	SEQ_EASY_PRINT(host_reset_cnt);
+	SEQ_EASY_PRINT(dev_reset_cnt);
 	SEQ_EASY_PRINT(unipro_PA_err_total_cnt);
 	SEQ_PA_PRINT(UNIPRO_PA_LANE0_ERR_CNT);
 	SEQ_PA_PRINT(UNIPRO_PA_LANE1_ERR_CNT);
@@ -286,6 +298,9 @@ static int record_upload_read_func(struct seq_file *s, void *v)
 	SEQ_UPLOAD_PRINT(ufs_bus_err_cnt);
 	SEQ_UPLOAD_PRINT(ufs_crypto_err_cnt);
 	SEQ_UPLOAD_PRINT(ufs_link_lost_cnt);
+	SEQ_UPLOAD_PRINT(task_abort_cnt);
+	SEQ_UPLOAD_PRINT(host_reset_cnt);
+	SEQ_UPLOAD_PRINT(dev_reset_cnt);
 	SEQ_UPLOAD_PRINT(unipro_PA_err_total_cnt);
 	SEQ_UPLOAD_PRINT(unipro_DL_err_total_cnt);
 	SEQ_UPLOAD_PRINT(unipro_NL_err_total_cnt);
@@ -748,8 +763,10 @@ int ufs_ioctl_monitor(struct scsi_device *dev, void __user *buf_user)
 	req = blk_mq_rq_to_pdu(rq);
 
 	cmdlen = COMMAND_SIZE(opcode);
-	if ((VENDOR_SPECIFIC_CDB == opcode) &&(0 == strncmp(dev->vendor, "SAMSUNG ", 8)))
+	if (((VENDOR_SPECIFIC_CDB == opcode) && (0 == strncmp(dev->vendor, "SAMSUNG ", 8)))
+	         || ((READ_BUFFER == opcode) && (0 == strncmp(dev->vendor, "XBSTOR ", 7)))) {
 		cmdlen = 16;
+	}
 
 	/*
 	 * get command and data to send to device, if any
@@ -1139,6 +1156,9 @@ static void ufs_oplus_ioctl_init(struct scsi_device *sdev) {
 }
 
 void ufs_oplus_init_sdev(struct scsi_device *sdev) {
+	if (scsi_is_wlun(sdev->lun))
+            return;
+
 	if (atomic_inc_return(&ufs_init_done) == 1) {
         	ufs_update_sdev(sdev);
 		ufs_oplus_ioctl_init(sdev);

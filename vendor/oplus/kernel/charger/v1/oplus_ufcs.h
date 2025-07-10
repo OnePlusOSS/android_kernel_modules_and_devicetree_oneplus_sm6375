@@ -8,8 +8,10 @@
 #include <linux/time.h>
 #include <linux/list.h>
 #ifndef CONFIG_OPLUS_CHARGER_MTK
+#if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 6, 0))
 #include <linux/usb/typec.h>
 #include <linux/usb/usbpd.h>
+#endif
 #endif
 #include <linux/random.h>
 #include <linux/device.h>
@@ -65,7 +67,7 @@
 #define UFCS_MOS_TEMP_OV_CNT 5
 #define UFCS_TBATT_OV_CNT 1
 #define UFCS_DISCONNECT_IOUT_MIN 300
-#define UFCS_DISCONNECT_IOUT_CNT 3
+#define UFCS_DISCONNECT_IOUT_CNT 4
 #define UFCS_ENALBE_CHECK_CNTS 3
 #define UFCS_BTB_DIFF_OV_CNT 5
 
@@ -85,14 +87,15 @@
 /*ufcs aciton*/
 #define UFCS_ACTION_START_DIFF_VOLT_V1 300
 #define UFCS_ACTION_START_DIFF_VOLT_V2 600
-#define UFCS_ACTION_CURR_MIN 1000
+#define UFCS_ACTION_CURR_MIN_OPLUS 800
+#define UFCS_ACTION_CURR_MIN_THIRD 1000
 #define UFCS_MASTER_ENALBE_CHECK_CNTS 10
 
 #define UFCS_ACTION_START_DELAY 100
 #define UFCS_ACTION_MOS_DELAY 50
-#define UFCS_ACTION_VOLT_DELAY 300
-#define UFCS_ACTION_CURR_DELAY 100
-#define UFCS_ACTION_CHECK_DELAY 400
+#define UFCS_ACTION_VOLT_DELAY 500
+#define UFCS_ACTION_CURR_DELAY 500
+#define UFCS_ACTION_CHECK_DELAY 500
 #define UFCS_ACTION_CHECK_ICURR_CNT 3
 
 #define UFCS_RETRY_COUNT 1
@@ -512,6 +515,7 @@ struct ufcs_current_limits {
 	int btb_diff_down;
 	int current_imax;
 	int current_slow_chg;
+	int full_1time_limit;
 };
 
 struct oplus_ufcs_limits {

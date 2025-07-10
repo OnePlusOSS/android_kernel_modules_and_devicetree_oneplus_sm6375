@@ -3,7 +3,7 @@
 
 #include <oplus_mms.h>
 
-#define FFC_CHG_STEP_MAX			4
+#define FFC_CHG_STEP_MAX			5
 #define AGAIN_FFC_CYCLY_THR_COUNT		2
 #define BATT_TEMP_HYST				20
 #define BATT_VOL_HYST				50
@@ -182,4 +182,5 @@ int oplus_set_chg_up_limit(struct oplus_mms *topic, int charge_limit_enable, int
     int is_force_set_charge_limit, int charge_limit_recharge_value, int callname);
 void oplus_comm_set_anti_expansion_status(struct oplus_mms *topic,int val);
 int oplus_comm_get_dis_ui_power_state(struct oplus_mms *topic);
+int oplus_comm_get_removed_bat_decidegc(struct oplus_mms *topic);
 #endif /* __OPLUS_CHG_COMM_H__ */

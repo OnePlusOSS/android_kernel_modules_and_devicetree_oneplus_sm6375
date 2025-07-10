@@ -33,7 +33,7 @@ const char *const ext_amp_vdd_need[] = { "None", "Need" };
 const char *const ext_amp_boost_vol_text[] = {"Level_1", "Level_2", "Level_3", "Level_4"};
 const char *const ext_amp_speaker_switch_function[] = { "Off", "On" };
 const char *const ext_rcv_amp_function[] = { "Off", "On" };
-const char *const ext_amp_speaker_mode_function[] = { "Off", "Music", "Voice", "Fm", "Rcv", "Left", "Right"};
+const char *const ext_amp_speaker_mode_function[] = { "Off", "Music", "Voice", "Fm", "Rcv", "Left", "Right", "Left_Voice"};
 const char *const ext_amp_voice_function[] = { "Off", "On" };
 const char *const ext_amp_mute_function[] = { "Off", "On" };
 const char *const ext_amp_check_feedback[] = { "Off", "On" };
@@ -82,7 +82,7 @@ int ext_amp_chipset_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value
 {
 	ucontrol->value.integer.value[0] = contrl_status->chipset;
 
-	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %#x\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %#lx\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -113,7 +113,7 @@ int speaker_l_mfr_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *
 		ucontrol->value.integer.value[0] = MFR_NONE;
 	}
 
-	pr_err("%s, %d, ucontrol->value.integer.value[0] = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_err("%s, %d, ucontrol->value.integer.value[0] = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -130,7 +130,7 @@ int speaker_r_mfr_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *
 		ucontrol->value.integer.value[0] = MFR_NONE;
 	}
 
-	pr_err("%s, %d, ucontrol->value.integer.value[0] = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_err("%s, %d, ucontrol->value.integer.value[0] = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -211,7 +211,7 @@ int speaker_l_amp_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *
 
 	ucontrol->value.integer.value[0] = (value >= 0) ? value : 0;
 
-	pr_debug("%s, %d, status = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, status = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -237,7 +237,7 @@ int speaker_r_amp_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *
 
 	ucontrol->value.integer.value[0] = (value >= 0) ? value : 0;
 
-	pr_debug("%s, %d, status = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, status = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -273,7 +273,7 @@ int rcv_amp_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *ucontr
 		ucontrol->value.integer.value[0] = contrl_status->rcv_enable;
 	}
 
-	pr_debug("%s, %d, status = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, status = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -344,7 +344,7 @@ int ext_amp_mode_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_value *u
 		ucontrol->value.integer.value[0] = contrl_status->amp_mode_setting;
 	}
 
-	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 
 	return 0;
@@ -385,7 +385,7 @@ int ext_amp_boost_volume_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_
 		ucontrol->value.integer.value[0] = contrl_status->amp_boost_volume;
 	}
 
-	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %d\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
+	pr_debug("%s, %d, ucontrol->value.integer.value[0] = %ld\n", __func__, __LINE__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -431,7 +431,7 @@ int ext_amp_force_mute_get(struct snd_kcontrol *kcontrol, struct snd_ctl_elem_va
 		ucontrol->value.integer.value[0] = contrl_status->amp_force_mute_status;
 	}
 
-	pr_debug("%s(), ucontrol->value.integer.value[0] = %d\n", __func__, ucontrol->value.integer.value[0]);
+	pr_debug("%s(), ucontrol->value.integer.value[0] = %ld\n", __func__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -493,7 +493,7 @@ int ext_amp_check_feedback_get(struct snd_kcontrol *kcontrol, struct snd_ctl_ele
 		ucontrol->value.integer.value[0] = contrl_status->check_feeback_enable;
 	}
 
-	pr_debug("%s(), ucontrol->value.integer.value[0] = %d\n", __func__, ucontrol->value.integer.value[0]);
+	pr_debug("%s(), ucontrol->value.integer.value[0] = %ld\n", __func__, ucontrol->value.integer.value[0]);
 
 	return 0;
 }
@@ -539,7 +539,8 @@ int oplus_spkr_pa_event(struct snd_soc_dapm_widget *w, struct snd_kcontrol *kcon
 		if (contrl_status->chipset == ALL_SPK) {
 			if (contrl_status->amp_mode_setting == WORK_MODE_RECEIVER) {
 				oplus_speaker_amp_set(R_SPK, WORK_STATUS_ON);
-			} else if (contrl_status->amp_mode_setting == WORK_MODE_LEFT) {
+			} else if ((contrl_status->amp_mode_setting == WORK_MODE_LEFT)
+				|| (contrl_status->amp_mode_setting == WORK_MODE_LEFT_VOICE)) {
 				oplus_speaker_amp_set(L_SPK, WORK_STATUS_ON);
 			} else if (contrl_status->amp_mode_setting == WORK_MODE_RIGHT) {
 				oplus_speaker_amp_set(R_SPK, WORK_STATUS_ON);
@@ -620,7 +621,7 @@ static int __init oplus_pa_manager_init(void)
 		pr_info("%s(),control status init \n", __func__);
 	}
 
-	pr_err("%s, %d, sizeof(oplus_speaker_device) = %d\n", __func__, __LINE__, sizeof(struct oplus_speaker_device));
+	pr_err("%s, %d, sizeof(oplus_speaker_device) = %ld\n", __func__, __LINE__, sizeof(struct oplus_speaker_device));
 
 	return 0;
 }

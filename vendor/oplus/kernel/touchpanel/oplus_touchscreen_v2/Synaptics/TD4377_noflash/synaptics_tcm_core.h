@@ -83,6 +83,7 @@
 #define TOUCH_REPORT_CONFIG_SIZE 128
 
 #define DTAP_DETECT     0x01
+#define STAP_DETECT     0x40
 #define CIRCLE_DETECT   0x02
 #define SWIPE_DETECT    0x04
 #define UNICODE_DETECT  0x08
@@ -134,7 +135,9 @@ enum touch_report_code {
 	TOUCH_REPORT_GESTURE_INFO = 198,
 	TOUCH_REPORT_GESTURE_COORDINATE = 199,
 	TOUCH_REPORT_PALM_DETECTED = 200,
-	TOUCH_REPORT_GLOVE_DETECTED = 203,
+	TOUCH_GET_WATER_MODE = 202,
+	TOUCH_GESTURE_SINGLE_TAP   = 203,
+	TOUCH_REPORT_GLOVE_DETECTED = 204,
 };
 
 enum module_type {
@@ -158,6 +161,8 @@ enum test_item_bit {
 	TYPE_PT11 				= 11,
 	TYPE_DYNAMIC_RANGE_DOZE = 14,
 	TYPE_NOISE_DOZE			= 15,
+	TYPE_PT17 				= 17,
+	TYPE_PT18 				= 18,
 	TYPE_HYBRIDRAW_CAP      = 18,
 	TYPE_RAW_CAP            = 22,
 	TYPE_TREXSHORT_CUSTOM   = 25,
@@ -229,6 +234,7 @@ enum dynamic_config_id {
 	DC_FREQUENCE_HOPPING = 0xD2,
 	DC_SET_REPORT_FRE = 0x11,
 	DC_GLOVE_MODE_ENABLED = 0x0D,
+	DC_GESTURE_MASK   = 0xFE,
 };
 
 enum command {
@@ -534,6 +540,7 @@ struct syna_tcm_hcd {
 	int tp_irq_state;
 	int zeroflash_init_done;
 	int check_uboot_failed_count;
+	int request_fw_image_id;
 
 	struct completion config_complete;
 	struct mutex reset_mutex;
@@ -575,6 +582,7 @@ struct syna_tcm_hcd {
 	bool irq_trigger_hdl_support;
 	bool health_monitor_support;
 	bool health_monitor_v2_support;
+	bool pt17_pt18_test_support;
 };
 
 struct device_hcd {
@@ -687,6 +695,7 @@ struct zeroflash_hcd {
 	unsigned char *buf;
 	char *fw_name;
 	const struct firmware *fw_entry;
+	const struct firmware *fw_lpwg_entry;
 	struct work_struct config_work;
 	struct work_struct firmware_work;
 	struct workqueue_struct *config_workqueue;
@@ -797,7 +806,7 @@ int syna_reset_gpio(void *chip_data, bool enable);
 void syna_tcm_hdl_done(struct syna_tcm_hcd *tcm_hcd);
 void zeroflash_update_fw_image(void);
 int zeroflash_parse_fw_image(void);
-
+void tp_wait_hdl_finished(void);
 void syna_tcm_start_reset_timer(struct syna_tcm_hcd *tcm_hcd);
 void syna_tcm_stop_reset_timer(struct syna_tcm_hcd *tcm_hcd);
 

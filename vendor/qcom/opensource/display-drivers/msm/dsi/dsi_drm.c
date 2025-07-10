@@ -896,6 +896,11 @@ int dsi_conn_set_info_blob(struct drm_connector *connector,
 	sde_kms_info_add_keyint(info, "max os brightness", panel->bl_config.brightness_max_level);
 	sde_kms_info_add_keyint(info, "max panel backlight", panel->bl_config.bl_max_level);
 
+
+#ifdef OPLUS_FEATURE_DISPLAY_ONSCREENFINGERPRINT
+	sde_kms_info_add_keyint(info, "exit_aod_cost_frame", panel->oplus_priv.aod_off_frame_cost);
+#endif
+
 	if (panel->spr_info.enable)
 		sde_kms_info_add_keystr(info, "spr_pack_type",
 			msm_spr_pack_type_str[panel->spr_info.pack_type]);

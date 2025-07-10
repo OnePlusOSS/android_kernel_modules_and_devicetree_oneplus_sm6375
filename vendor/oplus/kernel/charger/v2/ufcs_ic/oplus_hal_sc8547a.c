@@ -390,6 +390,7 @@ error:
 	return rc;
 }
 
+#define I2C_SMBUS_BLOCK_MAX	32
 static int sc8547a_read_data(struct sc8547a_device *chip, u8 addr, u8 *buf,
 			     int len)
 {
@@ -397,11 +398,27 @@ static int sc8547a_read_data(struct sc8547a_device *chip, u8 addr, u8 *buf,
 	int rc = 0;
 
 	mutex_lock(&chip->i2c_rw_lock);
-	rc = i2c_smbus_read_i2c_block_data(chip->client, addr_buf, len,
-					    buf);
-	if (rc < 0) {
-		chg_err("read 0x%04x error, rc=%d\n", addr, rc);
-		goto error;
+	if (len <= I2C_SMBUS_BLOCK_MAX) {
+		rc = i2c_smbus_read_i2c_block_data(chip->client, addr_buf, len, buf);
+		if (rc < 0) {
+			chg_err("read 0x%04x error, rc=%d\n", addr, rc);
+			goto error;
+		}
+	} else {
+		chg_info("read 0x%04x len = %d \n", addr, len);
+		rc = i2c_master_send(chip->client, &addr_buf, 1);
+		if (rc < 1) {
+			chg_err("write 0x%04x error, rc=%d\n", addr, rc);
+			rc = rc < 0 ? rc : -EIO;
+			goto error;
+		}
+
+		rc = i2c_master_recv(chip->client, buf, len);
+		if (rc < len) {
+			chg_err("read 0x%04x error, rc=%d\n", addr, rc);
+			rc = rc < 0 ? rc : -EIO;
+			goto error;
+		}
 	}
 	mutex_unlock(&chip->i2c_rw_lock);
 	return rc;
@@ -535,7 +552,6 @@ static int sc8547_voocphy_get_adapter_info(struct oplus_voocphy_manager *chip)
 static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 {
 	u8 data_block[4] = { 0 };
-	int i = 0;
 	u8 data = 0;
 	s32 ret = 0;
 
@@ -552,10 +568,10 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 4; i++) {
-		chg_info("read vsys vbat data_block[%d] = %u\n", i,
-			data_block[i]);
-	}
+
+	chg_info("read vsys vbat data_block[0] = %u, read vsys vbat data_block[1] = %u,"
+		"read vsys vbat data_block[2] = %u, read vsys vbat data_block[3] = %u\n",
+		data_block[0], data_block[1], data_block[2], data_block[3]);
 
 	chip->cp_vsys = ((data_block[0] << 8) | data_block[1]) * SC8547_VOUT_ADC_LSB;
 	chip->cp_vbat = ((data_block[2] << 8) | data_block[3]) * SC8547_VOUT_ADC_LSB;
@@ -570,10 +586,10 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 4; i++) {
-		chg_info("read ichg vbus data_block[%d] = %u\n", i,
-			data_block[i]);
-	}
+
+	chg_info("read ichg vbus data_block[0] = %u, read ichg vbus data_block[1] = %u,"
+		"read ichg vbus data_block[2] = %u, read ichg vbus data_block[3] = %u\n",
+		data_block[0], data_block[1], data_block[2], data_block[3]);
 
 	chip->cp_ichg =
 		((data_block[0] << 8) | data_block[1]) * SC8547_IBUS_ADC_LSB;
@@ -591,9 +607,9 @@ static void sc8547_voocphy_update_data(struct oplus_voocphy_manager *chip)
 	} else {
 		sc8547_i2c_error(chip, false, true);
 	}
-	for (i = 0; i < 2; i++) {
-		chg_info("read vac data_block[%d] = %u\n", i, data_block[i]);
-	}
+
+	chg_info("read vac data_block[0] = %u, read vac data_block[1] = %u\n",
+		data_block[0], data_block[1]);
 
 	chip->cp_vac = (((data_block[0] & SC8547_VAC_POL_H_MASK) << 8) |
 			data_block[1]) *
@@ -2366,6 +2382,32 @@ static int sc8547a_cp_adc_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
 	return 0;
 }
 
+static int sc8547a_cp_set_ucp_disable(struct oplus_chg_ic_dev *ic_dev, bool disable)
+{
+	struct sc8547a_device *chip;
+	int ret = 0;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+	chip = oplus_chg_ic_get_priv_data(ic_dev);
+
+	chg_info("%s %s\n", chip->dev->of_node->name, disable ? "disable" : "enable");
+	if (disable)
+		ret = sc8547_update_bits(chip->client, SC8547_REG_05, SC8547_IBUS_UCP_DIS_MASK,
+				   SC8547_IBUS_UCP_DISABLE << SC8547_IBUS_UCP_DIS_SHIFT);
+	else
+		ret = sc8547_update_bits(chip->client, SC8547_REG_05, SC8547_IBUS_UCP_DIS_MASK,
+				   SC8547_IBUS_UCP_ENABLE << SC8547_IBUS_UCP_DIS_SHIFT);
+
+	if (ret < 0) {
+		chg_err("failed to set ucp reg disable to 0x%02x, ret=%d\n", disable, ret);
+		return ret;
+	}
+	return 0;
+}
+
 static void *sc8547a_cp_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_chg_ic_func func_id)
 {
 	void *func = NULL;
@@ -2438,6 +2480,9 @@ static void *sc8547a_cp_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_chg
 		break;
 	case OPLUS_IC_FUNC_CP_SET_ADC_ENABLE:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_ADC_ENABLE, sc8547a_cp_adc_enable);
+		break;
+	case OPLUS_IC_FUNC_CP_SET_UCP_DISABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_UCP_DISABLE, sc8547a_cp_set_ucp_disable);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);

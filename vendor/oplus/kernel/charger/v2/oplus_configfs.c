@@ -33,6 +33,7 @@
 #include <oplus_chg_wls.h>
 #include <oplus_batt_bal.h>
 #include "monitor/oplus_chg_track.h"
+#include <oplus_chg_plc.h>
 
 struct oplus_configfs_device {
 	struct class *oplus_chg_class;
@@ -58,12 +59,16 @@ struct oplus_configfs_device {
 	struct oplus_mms *cpa_topic;
 	struct oplus_mms *batt_bal_topic;
 	struct oplus_mms *retention_topic;
+	struct oplus_mms *plc_topic;
 	struct mms_subscribe *ufcs_subs;
 	struct mms_subscribe *pps_subs;
+	struct mms_subscribe *plc_subs;
 
 	struct work_struct gauge_update_work;
 	struct work_struct eis_reset_work;
 	struct delayed_work eis_timeout_work;
+	struct delayed_work plc_enable_work;
+	struct delayed_work clean_plc_enable_work;
 
 	struct votable *wired_icl_votable;
 	struct votable *wired_fcc_votable;
@@ -77,6 +82,7 @@ struct oplus_configfs_device {
 	struct votable *pps_curr_votable;
 	struct votable *wls_fcc_curr_votable;
 	struct votable *wired_disable_votable;
+	struct votable *plc_force_buck_votable;
 
 	bool batt_exist;
 	int vbat_mv;
@@ -127,12 +133,13 @@ struct oplus_configfs_device {
 	bool pps_online_keep;
 	bool pps_charging;
 	bool pps_oplus_adapter;
-	u32 pps_adapter_id;
 
 	int vbat_uv_thr;
 	int real_cool_down;
 	unsigned int nvid_support_flags;
 	int eis_status;
+	int plc_status;
+	bool plc_user_enable;
 };
 
 static struct oplus_configfs_device *g_cfg_dev;
@@ -238,6 +245,13 @@ static bool is_batt_bal_topic_available(struct oplus_configfs_device *chip)
 		chip->batt_bal_topic = oplus_mms_get_by_name("batt_bal");
 
 	return !!chip->batt_bal_topic;
+}
+
+static bool is_plc_force_buck_votable_available(struct oplus_configfs_device *chip)
+{
+	if (!chip->plc_force_buck_votable)
+		chip->plc_force_buck_votable = find_votable("PLC_FORCE_BUCK");
+	return !!chip->plc_force_buck_votable;
 }
 
 __maybe_unused static bool is_comm_topic_available(struct oplus_configfs_device *chip)
@@ -1324,7 +1338,7 @@ static ssize_t ppschg_ing_show(struct device *dev,
 			val = PROTOCOL_CHARGING_UFCS_THIRD;
 	} else 	if (chip->pps_online || chip->pps_online_keep) {
 		if (chip->pps_oplus_adapter)
-			val = oplus_pps_adapter_id_to_protocol_type(chip->pps_adapter_id);
+			val = PROTOCOL_CHARGING_PPS_OPLUS;
 		else
 			val = PROTOCOL_CHARGING_PPS_THIRD;
 	}
@@ -1342,32 +1356,12 @@ static ssize_t ppschg_power_show(struct device *dev,
 	if (chip->ufcs_online) {
 		power = oplus_ufcs_get_ufcs_power(chip->ufcs_topic);
 	} else 	if (chip->pps_online || chip->pps_online_keep) {
-		if (chip->pps_oplus_adapter)
-			power = oplus_pps_adapter_id_to_power(chip->pps_adapter_id);
-		else
-			power = oplus_pps_adapter_id_to_power(PPS_FASTCHG_TYPE_THIRD);
+		power = oplus_pps_get_charging_power_watt(chip->pps_topic);
 	}
 
 	return sprintf(buf, "%d\n", power);
 }
 static DEVICE_ATTR_RO(ppschg_power);
-
-static ssize_t state_retention_show(struct device *dev,
-				struct device_attribute *attr, char *buf)
-{
-	bool val;
-	struct oplus_configfs_device *chip = dev->driver_data;
-
-	if (!chip) {
-		chg_err("chip is NULL\n");
-		return -EINVAL;
-	}
-
-	val = chip->retention_state;
-
-	return sprintf(buf, "%d\n", val);
-}
-static DEVICE_ATTR_RO(state_retention);
 
 static ssize_t bcc_exception_store(struct device *dev, struct device_attribute *attr,
 		const char *buf, size_t count)
@@ -2042,6 +2036,29 @@ static ssize_t gauge_type_show(struct device *dev,
 }
 static DEVICE_ATTR_RO(gauge_type);
 
+static ssize_t  battery_seal_flag_store(struct device *dev,
+			       struct device_attribute *attr, const char *buf,
+			       size_t count)
+{
+	int ret = 0;
+	int seal_flag;
+	struct oplus_configfs_device *chip = dev->driver_data;
+
+	if (kstrtos32(buf, 0, &seal_flag)) {
+		chg_err("buf error\n");
+		return -EINVAL;
+	}
+
+	ret = oplus_gauge_set_seal_flag(chip->gauge_topic, seal_flag);
+	if (ret < 0 && ret != -ENOTSUPP) {
+		chg_err("set seal_flag error");
+		 return -EINVAL;
+	}
+
+	return count;
+}
+static DEVICE_ATTR_WO(battery_seal_flag);
+
 static ssize_t vbat_uv_show(struct device *dev,
 				struct device_attribute *attr, char *buf)
 {
@@ -2185,7 +2202,6 @@ static struct device_attribute *oplus_battery_attributes[] = {
 #endif
 	&dev_attr_voocchg_ing,
 	&dev_attr_ppschg_ing,
-	&dev_attr_state_retention,
 	&dev_attr_ppschg_power,
 	&dev_attr_bcc_parms,
 	&dev_attr_bcc_current,
@@ -2220,6 +2236,7 @@ static struct device_attribute *oplus_battery_attributes[] = {
 	&dev_attr_eis_current,
 	&dev_attr_batt_bal_data,
 	&dev_attr_gauge_type,
+	&dev_attr_battery_seal_flag,
 	NULL
 };
 
@@ -2684,6 +2701,104 @@ static ssize_t deep_dischg_ratio_thr_store(struct device *dev, struct device_att
 }
 static DEVICE_ATTR_RW(deep_dischg_ratio_thr);
 
+#define PLC_ENABLE_DELAY_MS 2000
+static void oplus_configfs_plc_enable_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_configfs_device *chip = container_of(dwork, struct oplus_configfs_device, plc_enable_work);
+	int rc;
+
+	if (!chip->plc_user_enable || !chip->wired_online)
+		return;
+
+	if (chip->plc_status == PLC_STATUS_NOT_ALLOW) {
+		chip->plc_user_enable = false;
+		chg_err("status not allow, change plc_user_enable to false\n");
+		return;
+	}
+
+	chg_info("enable plc by kernel\n");
+	rc = oplus_chg_plc_enable(chip->plc_topic, true);
+	if (rc < 0)
+		chg_err("plc enable error, rc=%d\n", rc);
+}
+
+#define CLEAN_PLC_ENABLE_DELAY_MS 1600
+static void oplus_configfs_clean_plc_enable_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_configfs_device *chip = container_of(dwork, struct oplus_configfs_device, clean_plc_enable_work);
+
+	if (!chip->wired_online) {
+		chip->plc_user_enable = false;
+		chg_info("offline, change plc_user_enable to false\n");
+	} else if (!chip->retention_state) {
+		chip->plc_user_enable = false;
+		chg_info("retention_state[false], change plc_user_enable to false\n");
+	}
+}
+
+static ssize_t plc_show(struct device *dev, struct device_attribute *attr, char *buf)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int counts = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+
+	counts = chip->plc_status;
+	if (chip->retention_state && chip->plc_user_enable)
+		counts = PLC_STATUS_ENABLE;
+
+	return sprintf(buf, "status=%d\n", counts);
+}
+
+static ssize_t plc_store(struct device *dev, struct device_attribute *attr,
+					const char *buf, size_t count)
+{
+	struct oplus_configfs_device *chip = dev->driver_data;
+	int val = 0;
+	char key[64] = { 0 };
+	int rc = 0;
+
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -EINVAL;
+	}
+	if (!buf) {
+		chg_err("buf is NULL\n");
+		return -EINVAL;
+	}
+
+	if (sscanf(buf, "%63[^=]=%d", key, &val) != 2) {
+		chg_info("buf %s error\n", buf);
+		return -EINVAL;
+	}
+
+	if (sysfs_streq("switch", key)) {
+		if (strncmp(buf, "switch=1|callname=", 18) && strncmp(buf, "switch=0|callname=", 18)) {
+			chg_info("buf invalid: %s\n", buf);
+			return -EINVAL;
+		}
+		chg_info("buf=[%s], change switch to  %d\n", buf, val);
+		chip->plc_user_enable = !!val;
+		rc = oplus_chg_plc_enable(chip->plc_topic, !!val);
+		if (rc < 0) {
+			chg_err("plc %s error, rc=%d\n", !!val ? "enable" : "disable", rc);
+			return rc;
+		}
+	} else if (sysfs_streq("buck", key)) {
+		chg_info("buf=[%s], change buck to %x\n", buf, val);
+		if (is_plc_force_buck_votable_available(chip))
+			vote(chip->plc_force_buck_votable, USER_VOTER, !!val, val, false);
+	}
+
+	return count;
+}
+static DEVICE_ATTR_RW(plc);
+
 static int get_adapter_power(struct oplus_configfs_device *chip)
 {
 	int power = 0;
@@ -2698,10 +2813,7 @@ static int get_adapter_power(struct oplus_configfs_device *chip)
 	} else if (chip->ufcs_online) {
 		power = oplus_ufcs_get_ufcs_power(chip->ufcs_topic) * 1000;
 	} else 	if (chip->pps_online || chip->pps_online_keep) {
-		if (chip->pps_oplus_adapter)
-			power = oplus_pps_adapter_id_to_power(chip->pps_adapter_id) * 1000;
-		else
-			power = oplus_pps_adapter_id_to_power(PPS_FASTCHG_TYPE_THIRD) * 1000;
+		power = oplus_pps_get_adapter_power_mw(chip->pps_topic);
 	} else if (chip->vooc_online) {
 		if (fast_chg_type_by_user > 0) {
 			cur_sid = oplus_adapter_id_to_sid(chip->vooc_topic, fast_chg_type_by_user);
@@ -2953,13 +3065,11 @@ static ssize_t ui_power_show(struct device *dev,
 		pps_or_ufcs_power = oplus_ufcs_get_ufcs_power(chip->ufcs_topic);
 	} else 	if (chip->pps_online || chip->pps_online_keep) {
 		if (chip->pps_oplus_adapter) {
-			pps_or_ufcs_ing = oplus_pps_adapter_id_to_protocol_type(chip->pps_adapter_id);
-			if (pps_or_ufcs_ing)
-				pps_or_ufcs_power = oplus_pps_adapter_id_to_power(chip->pps_adapter_id);
+			pps_or_ufcs_ing = PROTOCOL_CHARGING_PPS_OPLUS;
 		} else {
 			pps_or_ufcs_ing = PROTOCOL_CHARGING_PPS_THIRD;
-			pps_or_ufcs_power = oplus_pps_adapter_id_to_power(PPS_FASTCHG_TYPE_THIRD);
 		}
+		pps_or_ufcs_power = oplus_pps_get_charging_power_watt(chip->pps_topic);
 	}
 
 	if (pps_or_ufcs_ing > 0)
@@ -2982,10 +3092,10 @@ static ssize_t ui_power_show(struct device *dev,
 
 	if (pre_ui_power != ui_power) {
 		pre_ui_power = ui_power;
-		chg_info("ui_power_show %d %d %d %d %d, %d %d %d %d, %d %d %d %d\n",
+		chg_info("ui_power_show %d %d %d %d %d, %d %d %d %d, %d %d %d\n",
 			  adapter_power, project_power, chip->ufcs_online, chip->pps_online, chip->pps_online_keep,
 			  chip->ufcs_oplus_adapter, chip->pps_oplus_adapter, pps_or_ufcs_ing, pps_or_ufcs_power,
-			  ui_power, chip->ufcs_adapter_id, chip->pps_adapter_id, ui_power_by_user);
+			  ui_power, chip->ufcs_adapter_id, ui_power_by_user);
 	}
 	return sprintf(buf, "%u\n", ui_power);
 }
@@ -3070,13 +3180,11 @@ static ssize_t cpa_power_show(struct device *dev,
 		pps_or_ufcs_power = oplus_ufcs_get_ufcs_power(chip->ufcs_topic);
 	} else 	if (chip->pps_online || chip->pps_online_keep) {
 		if (chip->pps_oplus_adapter) {
-			pps_or_ufcs_ing = oplus_pps_adapter_id_to_protocol_type(chip->pps_adapter_id);
-			if (pps_or_ufcs_ing)
-				pps_or_ufcs_power = oplus_pps_adapter_id_to_power(chip->pps_adapter_id);
+			pps_or_ufcs_ing = PROTOCOL_CHARGING_PPS_OPLUS;
 		} else {
 			pps_or_ufcs_ing = PROTOCOL_CHARGING_PPS_THIRD;
-			pps_or_ufcs_power = oplus_pps_adapter_id_to_power(PPS_FASTCHG_TYPE_THIRD);
 		}
+		pps_or_ufcs_power = oplus_pps_get_charging_power_watt(chip->pps_topic);
 	}
 
 	if (pps_or_ufcs_ing > 0)
@@ -3091,10 +3199,10 @@ static ssize_t cpa_power_show(struct device *dev,
 
 	if (pre_cpa_power != cpa_power) {
 		pre_cpa_power = cpa_power;
-		chg_info("ui_power_show %d %d %d %d, %d %d %d %d, %d %d %d %d\n",
+		chg_info("ui_power_show %d %d %d %d, %d %d %d %d, %d %d %d\n",
 			  adapter_power, project_power, chip->ufcs_online, chip->pps_online,
 			  chip->ufcs_oplus_adapter, chip->pps_oplus_adapter, pps_or_ufcs_ing, pps_or_ufcs_power,
-			  cpa_power, chip->ufcs_adapter_id, chip->pps_adapter_id, cpa_power_by_user);
+			  cpa_power, chip->ufcs_adapter_id, cpa_power_by_user);
 	}
 	return sprintf(buf, "%u\n", cpa_power);
 }
@@ -3487,6 +3595,7 @@ static struct device_attribute *oplus_common_attributes[] = {
 	&dev_attr_sili_spare_power_enable,
 	&dev_attr_sili_ic_alg_cfg,
 	&dev_attr_chg_up_limit,
+	&dev_attr_plc,
 	NULL
 };
 
@@ -4023,8 +4132,14 @@ static void oplus_configfs_wired_subs_callback(struct mms_subscribe *subs,
 			oplus_mms_get_item_data(chip->wired_topic, id, &data,
 						false);
 			chip->wired_online = data.intval;
-			if (!chip->wired_online)
+			if (!chip->wired_online) {
 				schedule_work(&chip->eis_reset_work);
+				if (chip->plc_topic && chip->plc_user_enable) {
+					cancel_delayed_work(&chip->clean_plc_enable_work);
+					schedule_delayed_work(&chip->clean_plc_enable_work,
+						msecs_to_jiffies(CLEAN_PLC_ENABLE_DELAY_MS));
+				}
+			}
 			break;
 		case WIRED_ITEM_CHG_TYPE:
 			oplus_mms_get_item_data(chip->wired_topic, id, &data,
@@ -4394,12 +4509,6 @@ static void oplus_configfs_pps_subs_callback(struct mms_subscribe *subs,
 				break;
 			chip->pps_charging = !!data.intval;
 			break;
-		case PPS_ITEM_ADAPTER_ID:
-			rc = oplus_mms_get_item_data(chip->pps_topic, id, &data, false);
-			if (rc < 0)
-				break;
-			chip->pps_adapter_id = (u32)data.intval;
-			break;
 		case PPS_ITEM_OPLUS_ADAPTER:
 			rc = oplus_mms_get_item_data(chip->pps_topic, id, &data, false);
 			if (rc < 0)
@@ -4442,9 +4551,6 @@ static void oplus_configfs_subscribe_pps_topic(struct oplus_mms *topic,
 	rc = oplus_mms_get_item_data(chip->pps_topic, PPS_ITEM_CHARGING, &data, true);
 	if (rc >= 0)
 		chip->pps_charging = !!data.intval;
-	rc = oplus_mms_get_item_data(chip->pps_topic, PPS_ITEM_ADAPTER_ID, &data, true);
-	if (rc >= 0)
-		chip->pps_adapter_id = (u32)data.intval;
 	rc = oplus_mms_get_item_data(chip->pps_topic, PPS_ITEM_OPLUS_ADAPTER, &data, true);
 	if (rc >= 0)
 		chip->pps_oplus_adapter = !!data.intval;
@@ -4462,6 +4568,10 @@ static void oplus_configfs_retention_subs_callback(struct mms_subscribe *subs,
 		case RETENTION_ITEM_CONNECT_STATUS:
 			oplus_mms_get_item_data(chip->retention_topic, id, &data, false);
 			chip->retention_state = data.intval;
+			if (chip->plc_topic && chip->plc_user_enable && chip->retention_state) {
+				cancel_delayed_work(&chip->plc_enable_work);
+				schedule_delayed_work(&chip->plc_enable_work, msecs_to_jiffies(PLC_ENABLE_DELAY_MS));
+			}
 			break;
 		default:
 			break;
@@ -4492,6 +4602,55 @@ static void oplus_configfs_subscribe_retention_topic(struct oplus_mms *topic,
 		chip->retention_state = !!data.intval;
 }
 
+static void oplus_configfs_plc_subs_callback(struct mms_subscribe *subs,
+					      enum mms_msg_type type, u32 id, bool sync)
+{
+	struct oplus_configfs_device *chip = subs->priv_data;
+	union mms_msg_data data = { 0 };
+
+	switch (type) {
+	case MSG_TYPE_ITEM:
+		switch (id) {
+		case PLC_ITEM_STATUS:
+			oplus_mms_get_item_data(chip->plc_topic, id, &data, false);
+			chip->plc_status = data.intval;
+			chg_info(" update plc_status=%d\n", chip->plc_status);
+			break;
+		default:
+			break;
+		}
+		break;
+	default:
+		break;
+	}
+}
+
+static void oplus_configfs_subscribe_plc_topic(struct oplus_mms *topic,
+						void *prv_data)
+{
+	struct oplus_configfs_device *chip = prv_data;
+	union mms_msg_data data = { 0 };
+	int rc;
+
+	chip->plc_topic = topic;
+	chip->plc_subs = oplus_mms_subscribe(chip->plc_topic, chip,
+					      oplus_configfs_plc_subs_callback,
+					      "configfs");
+	if (IS_ERR_OR_NULL(chip->plc_topic)) {
+		chg_err("subscribe plc topic error, rc=%ld\n",
+			PTR_ERR(chip->plc_topic));
+		return;
+	}
+
+	rc = oplus_mms_get_item_data(chip->plc_topic, PLC_ITEM_STATUS, &data, true);
+	if (rc < 0)
+		chg_err("can't get plc status data, rc=%d", rc);
+	else
+		chip->plc_status = data.intval;
+
+	return;
+}
+
 static __init int oplus_configfs_init(void)
 {
 	struct oplus_configfs_device *chip;
@@ -4507,6 +4666,8 @@ static __init int oplus_configfs_init(void)
 	INIT_WORK(&chip->gauge_update_work, oplus_configfs_gauge_update_work);
 	INIT_WORK(&chip->eis_reset_work, oplus_configfs_eis_reset_work);
 	INIT_DELAYED_WORK(&chip->eis_timeout_work, oplus_configfs_eis_timeout_work);
+	INIT_DELAYED_WORK(&chip->plc_enable_work, oplus_configfs_plc_enable_work);
+	INIT_DELAYED_WORK(&chip->clean_plc_enable_work, oplus_configfs_clean_plc_enable_work);
 
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 3, 0))
 	chip->oplus_chg_class = class_create("oplus_chg");
@@ -4544,6 +4705,7 @@ static __init int oplus_configfs_init(void)
 	oplus_mms_wait_topic("ufcs", oplus_configfs_subscribe_ufcs_topic, chip);
 	oplus_mms_wait_topic("pps", oplus_configfs_subscribe_pps_topic, chip);
 	oplus_mms_wait_topic("retention", oplus_configfs_subscribe_retention_topic, chip);
+	oplus_mms_wait_topic("plc", oplus_configfs_subscribe_plc_topic, chip);
 
 	return 0;
 
@@ -4577,6 +4739,8 @@ static __exit void oplus_configfs_exit(void)
 		oplus_mms_unsubscribe(g_cfg_dev->pps_subs);
 	if (!IS_ERR_OR_NULL(g_cfg_dev->retention_subs))
 		oplus_mms_unsubscribe(g_cfg_dev->retention_subs);
+	if (!IS_ERR_OR_NULL(g_cfg_dev->plc_subs))
+		oplus_mms_unsubscribe(g_cfg_dev->plc_subs);
 
 	if (!IS_ERR(g_cfg_dev->oplus_chg_class))
 		class_destroy(g_cfg_dev->oplus_chg_class);

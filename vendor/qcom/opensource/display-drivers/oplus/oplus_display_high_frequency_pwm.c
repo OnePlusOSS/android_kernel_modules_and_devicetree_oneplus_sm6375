@@ -248,8 +248,9 @@ int oplus_panel_pwm_extend_mode_wait_te(struct dsi_panel *panel, u32 pwm_switch_
 	if (panel->pwm_params.pwm_power_on && panel->pwm_params.pwm_switch_support_extend_mode) {
 		panel->pwm_params.pwm_power_on = false;
 		panel->pwm_params.oplus_pwm_switch_state_changed = false;
-		if (panel->pwm_params.oplus_dynamic_pulse == ONE_EIGHTEEN_PULSE && panel->bl_config.bl_level > 1162
-			&& panel->pwm_params.oplus_aod_mutual_fps_flag == false) {
+		if ((panel->pwm_params.oplus_dynamic_pulse == ONE_EIGHTEEN_PULSE)
+			&& (panel->bl_config.bl_level > panel->pwm_params.pwm_bl_threshold)
+			&& (panel->pwm_params.oplus_aod_mutual_fps_flag == false)) {
 			rc = dsi_panel_tx_cmd_set(panel, DSI_CMD_PWM_SWITCH_3TO1);
 		}
 		return rc;

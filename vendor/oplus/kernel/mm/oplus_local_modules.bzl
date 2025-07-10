@@ -88,6 +88,9 @@ def define_oplus_local_modules():
         ]),
         includes = ["."],
         local_defines = ["CONFIG_DYNAMIC_TUNING_SWAPPINESS", "CONFIG_OPLUS_BALANCE_ANON_FILE_RECLAIM", "CONFIG_HYBRIDSWAP_SWAPD"],
+        conditional_defines = {
+             "mtk":  ["CONFIG_OPLUS_EXTRA_FREE_KBYTES"],
+        },
         copts = select({
             "//build/kernel/kleaf:kocov_is_true": ["-fprofile-arcs", "-ftest-coverage"],
             "//conditions:default": [],
@@ -164,17 +167,49 @@ def define_oplus_local_modules():
         }),
     )
 
+    define_oplus_ddk_module(
+        name = "oplus_bsp_kshrink_slabd",
+        srcs = native.glob([
+            "**/*.h",
+            "async_reclaim_opt/kshrink_slabd/kshrink_slabd.c",
+        ]),
+        includes = ["."],
+        local_defines = ["CONFIG_KSHRINK_SLABD"],
+        copts = select({
+            "//build/kernel/kleaf:kocov_is_true": ["-fprofile-arcs", "-ftest-coverage"],
+            "//conditions:default": [],
+        }),
+    )
+
+    define_oplus_ddk_module(
+        name = "oplus_exit_mm_optimize",
+        srcs = native.glob([
+            "**/*.h",
+            "exit_mm_optimize/exit_mm_optimize.c",
+        ]),
+        ko_deps = [
+            "//vendor/oplus/kernel/mm:oplus_bsp_hybridswap_zram",
+        ],
+        includes = ["."],
+        copts = select({
+            "//build/kernel/kleaf:kocov_is_true": ["-fprofile-arcs", "-ftest-coverage"],
+            "//conditions:default": [],
+        }),
+    )
+
     ddk_copy_to_dist_dir(
         name = "oplus_bsp_mm",
         module_list = [
             "oplus_bsp_memleak_detect_simple",
             "oplus_bsp_sigkill_diagnosis",
             "oplus_bsp_zram_opt",
+            "oplus_exit_mm_optimize",
             "oplus_bsp_proactive_compact",
             "oplus_bsp_hybridswap_zram",
             "oplus_bsp_zsmalloc",
             "oplus_bsp_lz4k",
             "oplus_bsp_kswapd_opt",
+            "oplus_bsp_kshrink_slabd",
             # TODO: qcom convert to GKI implementation
             #"oplus_bsp_uxmem_opt",
             #"oplus_bsp_dynamic_readahead",

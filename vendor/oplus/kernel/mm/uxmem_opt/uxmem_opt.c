@@ -47,8 +47,8 @@
 #define MAX_UXMEM_POOL_ALLOC_RETRIES (5)
 
 static const unsigned int orders[] = {0, 1};
-/* 64M for order 0, 8M  for order1 by default */
-static const unsigned int page_pool_nr_pages[] = {(SZ_64M >> PAGE_SHIFT), (SZ_8M >> PAGE_SHIFT)};
+/* 96M for order 0, 8M  for order1 by default */
+static const unsigned int page_pool_nr_pages[] = {((SZ_64M + SZ_32M) >> PAGE_SHIFT), (SZ_8M >> PAGE_SHIFT)};
 #define NUM_ORDERS ARRAY_SIZE(orders)
 static struct page_pool *pools[NUM_ORDERS];
 static struct task_struct *ux_page_pool_tsk = NULL;
@@ -616,14 +616,25 @@ static void kvmalloc_check_use_vmalloc(void *data, size_t size,
 	}
 }
 
+/*
+ * because kernel version update, and some ALLOC flags changed,
+ * if ALLOC_HARDER not in internel.h,
+ * use ALLOC_ALLOC_RESERVES and ALLOC_NON_BLOCK instead;
+ * otherwise, it will not be replaced.
+ */
+#if defined(ALLOC_HARDER) && defined(ALLOC_OOM)
+#define ALLOC_RESERVES (ALLOC_HARDER|ALLOC_OOM)
+#define ALLOC_NON_BLOCK ALLOC_HARDER
+#endif
+
 static void should_alloc_pages_retry(void *data, gfp_t gfp_mask,
 		int order, int *alloc_flags, int migratetype,
 		struct zone *preferred_zone, struct page **p_page, bool *should_alloc_retry)
 {
 	if (unlikely(test_task_ux(current)) && !in_interrupt() &&
 		(preferred_zone->nr_reserved_highatomic >= (SZ_8M >> PAGE_SHIFT)) &&
-		!(*alloc_flags & (ALLOC_HARDER|ALLOC_OOM)) && !(gfp_mask & __GFP_NORETRY)) {
-		*alloc_flags |= ALLOC_HARDER;
+		!(*alloc_flags & ALLOC_RESERVES) && !(gfp_mask & __GFP_NORETRY)) {
+		*alloc_flags |= ALLOC_NON_BLOCK;
 		*should_alloc_retry = true;
 	} else {
 		*should_alloc_retry = false;
@@ -677,7 +688,7 @@ static void meminfo_adjust(void *data, unsigned long *totalram, unsigned long *f
 		for (i = 0; i < NUM_ORDERS; i++) {
 			pool = pools[i];
 			for (j = 0; j < POOL_MIGRATETYPE_TYPES_SIZE; j++) {
-				pool_pages += pool->count[j] >> orders[i];
+				pool_pages += pool->count[j] << orders[i];
 			}
 		}
 		*freeram += pool_pages;

@@ -22,7 +22,7 @@
 		track,fast_chg_break_t_thd = <1400>;
 		track,general_chg_break_t_thd = <200>;
 		track,voocphy_type = <3>;
-		track,wired_max_power = <67000>;
+		track,wired_max_power = <45000>; /* 45W */
 		track,wired_fast_chg_scheme = <2>;
 		track,wls_max_power = <0>;
 		track,wls_bpp_chg_scheme = <0>;
@@ -447,6 +447,7 @@
 		rt-tcpc,vconn_supply  = <1>;  /* 0: Never, 1: Always, */
 					      /* 2: EMarkOnly, 3: StartOnly */
 		/* rt-tcpc,disable_pe; */
+		support_role_swap_delay;
 		rt1711pd,intr_gpio = <&tlmm 124 0x0>;
 		rt1711pd,intr_gpio_num = <124>;
 		rt,disable_irq_reset;
