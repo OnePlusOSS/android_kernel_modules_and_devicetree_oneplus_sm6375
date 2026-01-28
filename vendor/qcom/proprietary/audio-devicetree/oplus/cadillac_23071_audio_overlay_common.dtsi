@@ -1,0 +1,118 @@
+/* #ifdef OPLUS_ARCH_EXTENDS */
+&tlmm {
+	sia81xx_gpio_L: sia81xx_gpio_L {
+		mux {
+			pins = "gpio11";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio11";
+			drive-strength = <6>;
+			bias-disable;
+		};
+	};
+	sia81xx_gpio_R: sia81xx_gpio_R {
+		mux {
+			pins = "gpio38";
+			function = "gpio";
+		};
+
+		config {
+			pins = "gpio38";
+			drive-strength = <6>;
+			bias-disable;
+		};
+	};
+};
+
+&soc {
+	si_pa_L: si_pa_L {
+			compatible = "si,sia81xx";
+			si,si_pa_type = "sia8159";
+			si,si_pa_reset = <&tlmm 11 0x00>;
+			si,si_pa_owi = <&tlmm 11 0x00>;
+			pinctrl-names = "si_pa_gpio";
+			pinctrl-0 = <&sia81xx_gpio_L>;
+
+			si,si_pa_disable_pin = <1>;
+
+			/* the same value share a same task
+			 * valid value range : 0 ~ 7 */
+			timer_task_hdl = <0>;
+
+			channel_num = <0>;
+			owi_mode = <6>;
+			status = "okay";
+	};
+
+	si_pa_R: si_pa_R {
+			compatible = "si,sia81xx";
+			si,si_pa_type = "sia8159";
+			si,si_pa_reset = <&tlmm 38 0x00>;
+			si,si_pa_owi = <&tlmm 38 0x00>;
+			pinctrl-names = "sia81xx_gpio";
+			pinctrl-0 = <&sia81xx_gpio_R>;
+
+			si,si_pa_disable_pin = <1>;
+
+			/* the same value share a same task
+			 * valid value range : 0 ~ 7 */
+			timer_task_hdl = <0>;
+
+			channel_num = <1>;
+			owi_mode = <6>;
+			status = "okay";
+	};
+};
+
+&holi_snd {
+		si,sia81xx-max-num = <2>;
+		si,sia81xx-aux-devs = <&si_pa_L>, <&si_pa_R>;
+		si,sia81xx-aux-devs-prefix = "SpkrMonoL", "SpkrMonoR";
+};
+
+&qupv3_se10_i2c {
+	status = "ok";
+	qcom,clk-freq-out = <400000>;
+
+	sipa_i2c_L: sipa_i2c_L@28 {
+		compatible = "si,sia81xx-i2c";
+		reg = <0x28>;
+		si,sipa-dev = <&si_pa_L>;
+		status = "okay";
+	};
+	sipa_i2c_R: sipa_i2c_R@29 {
+		compatible = "si,sia81xx-i2c";
+		reg = <0x29>;
+		si,sipa-dev = <&si_pa_R>;
+		status = "okay";
+	};
+
+	aw87xxx_pa@58 {
+		compatible = "awinic,aw87xxx_pa";
+		reg = <0x58>;
+		reset-gpio = <&tlmm 11 0>;
+		dev_index = < 0 >;
+		aw-rx-topo-id = <0x1000ff00>;
+		aw-rx-port-id = <0xB030>;
+		status = "okay";
+	};
+
+	aw87xxx_pa@5b {
+		compatible = "awinic,aw87xxx_pa";
+		reg = <0x5b>;
+		reset-gpio = <&tlmm 38 0>;
+		dev_index = < 1 >;
+		aw-rx-topo-id = <0x1000ff00>;
+		aw-rx-port-id = <0xB030>;
+		status = "okay";
+	};
+};
+
+&wcd937x_reset_active {
+	config {
+		drive-strength = <4>; /* 4 mA */
+	};
+};
+/* OPLUS_ARCH_EXTENDS */

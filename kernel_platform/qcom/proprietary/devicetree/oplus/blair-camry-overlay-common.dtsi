@@ -1,0 +1,124 @@
+#include "../qcom/blair-mtp-nopmi-overlay.dts"
+
+/* DTBO: Platform common generic overlay */
+#include "oplus_fp/oplus_fp_23071.dtsi"
+#include "tp/camry-oplus-tp-23071.dtsi"
+
+//#ifdef OPLUS_FEATURE_SECURITY_COMMON
+// expand tz mem
+&removed_mem {
+	no-map;
+        reg = <0x0 0xc0000000 0x0 0x9C00000>;
+};
+//#endif /*OPLUS_FEATURE_SECURITY_COMMON*/
+
+&soc{
+    //#ifdef OPLUS_FEATURE_SECURITY_COMMON
+    /* 2023/10/13 add for oplus secure */
+    oplus_secure_common {
+        compatible = "oplus,secure_common";
+        oplus,sec_reg_num = <0x1B405D8>;
+        oplus,sec_en_anti_reg = <0x1B401CC>;
+        oplus,sec_override1_reg = <0x7860C0>;
+        oplus,override1_en_value = <0x1>;
+    };
+    //#endif /*OPLUS_FEATURE_SECURITY_COMMON*/
+    bootloader_log {
+         compatible = "bootloader_log";
+         linux,contiguous-region = <&bootloader_log_mem>;
+     };
+    dump_device_info {
+         compatible = "dump_device_info";
+         linux,contiguous-region = <&dump_device_info_mem>;
+    };
+};
+&reserved_memory {
+        /*
+        This size is from
+        boot_images/boot/QcomPkg/SocPkg/StraitPkg/LAA/uefiplat.cfg
+        0x9FFF7000, 0x00008000, "Log Buffer",        AddMem, SYS_MEM, SYS_MEM_CAP, RtData, WRITE_BACK_XN
+        so we reserve this for bootloader log
+        */
+        bootloader_log_mem: botloader_mem@0x9FFF7000 {
+                reg = <0 0x9FFF7000 0 0x00008000>;
+                label = "bootloader_log_mem";
+        };
+
+        dump_device_info_mem: device_info_mem@0xd0340000 {
+                reg = <0 0xd0340000 0 0x00008000>;
+                label = "dump_device_info_mem";
+        };
+};
+
+//#ifdef OPLUS_FEATURE_RF_CABLE_DETECT
+&tlmm {
+	rf_cable0_active: rf_cable0_active {
+		mux {
+			pins = "gpio24";
+			function = "gpio";
+		};
+		config {
+			pins = "gpio24";
+			drive-strength = <2>;
+			input-enable;
+			bias-pull-up;
+		};
+	};
+};
+
+&soc {
+	oplus_rf_cable {
+		compatible = "oplus,rf_cable";
+		interrupt-parent = <&tlmm>;
+		rf_cable_support_num = <1>;
+		rf,cable0-gpio = <&tlmm 24 0>;
+		rf,cable-support-timer = <0>;
+		pinctrl-names = "rf_cable_active";
+		pinctrl-0 = <&rf_cable0_active>;
+	};
+    //#ifdef OPLUS_FEATURE_THERMAL_HORAE
+    shell_front {
+        compatible = "oplus,shell-temp";
+    };
+
+    shell_frame {
+        compatible = "oplus,shell-temp";
+    };
+
+    shell_back {
+        compatible = "oplus,shell-temp";
+    };
+    //#endif /* OPLUS_FEATURE_THERMAL_HORAE */
+
+    //#ifdef CONFIG_OPLUS_FEATURE_SCHED_ASSIST
+    sched_assit {
+        compatible = "oplus,sched_assit";
+    };
+    //#endif /* CONFIG_OPLUS_FEATURE_SCHED_ASSIST */
+
+    midas_pdev {
+        compatible = "oplus,midas-pdev";
+    };
+};
+//#endif /* OPLUS_FEATURE_RF_CABLE_DETECT */
+
+/*#ifdef OPLUS_FEATURE_DISPLAY*/
+&rpm_bus {
+	rpm-regulator-ldoa13 {
+		status = "okay";
+		L13A: pm6125_l13: regulator-l13 {
+			regulator-min-microvolt = <1650000>;
+			regulator-max-microvolt = <1980000>;
+			qcom,init-voltage = <1650000>;
+			status = "okay";
+		};
+	};
+};
+/*#endif OPLUS_FEATURE_DISPLAY*/
+
+//ufs3.1->ufs2.2, Limit the gear of ufs3.1 to 3
+&ufshc_mem {
+	limit-tx-hs-gear = <3>;
+	limit-rx-hs-gear = <3>;
+	limit-rate = <2>; /* HS Rate-B */
+};

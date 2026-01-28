@@ -1,0 +1,10 @@
+&qupv3_se10_i2c {
+    #address-cells = <1>;
+    #size-cells = <0>;
+    status = "ok";
+    aw37004@28{
+        compatible = "qualcomm,aw37004";
+        reg = <0x28>;
+        status = "okay";
+    };
+};
