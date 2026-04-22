@@ -12,3 +12,9 @@
 	oplus,region-id = <2>;
 	oplus,hw-id = <OPLUS_DVT1 OPLUS_PVT1>;
 };
+
+&soc {
+    oplus,blk-mq {
+	kblockd_ux_unbound_enable = "y";
+    };
+};

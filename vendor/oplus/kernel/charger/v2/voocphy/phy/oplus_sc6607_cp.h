@@ -355,6 +355,7 @@ enum sc6607_fields {
 	F_SS_TIMEOUT_MASK,
 	F_PHY_EN,
 	F_PHY_RST,
+	F_SWITCHING_STAT,
 	F_MAX_FIELDS,
 };
 
@@ -478,6 +479,7 @@ static const struct reg_field sc6607_reg_fields[] = {
 	[F_SS_TIMEOUT_MASK] = REG_FIELD(SC6607_REG_CP_FLT_MASK, 4, 4),
 	[F_PHY_EN] = REG_FIELD(SC6607_REG_PHY_CTRL, 7, 7),
 	[F_PHY_RST] = REG_FIELD(SC6607_REG_PHY_CTRL, 1, 1),
+	[F_SWITCHING_STAT] = REG_FIELD(SC6607_REG_CP_INT_STAT, 0, 0),
 };
 #endif /*_OPLUS_SC6607_H_*/
 

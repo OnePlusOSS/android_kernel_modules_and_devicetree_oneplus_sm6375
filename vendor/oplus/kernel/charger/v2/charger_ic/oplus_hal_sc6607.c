@@ -45,10 +45,8 @@
 #include <oplus_impedance_check.h>
 #include <oplus_chg.h>
 #include <ufcs_class.h>
-#include "oplus_hal_sc6607.h"
-#include <oplus_chg_pps.h>
-#include <tcpm.h>
 #include "../voocphy/oplus_voocphy.h"
+#include "oplus_hal_sc6607.h"
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 #include <mtk_boot_common.h>
@@ -64,176 +62,6 @@
 #if (LINUX_VERSION_CODE >= KERNEL_VERSION(6, 12, 0))
 #include "thermal_core.h"
 #endif
-
-struct soft_bc12 {
-	u8 bc12_state;
-	enum DPDM_STATE dp_state;
-	enum DPDM_STATE dm_state;
-	enum BC12_RESULT result;
-
-	u8 flag;
-	bool detect_done;
-	bool first_noti_sdp;
-	bool detect_ing;
-
-	struct mutex running_lock;
-	struct delayed_work detect_work;
-	int next_run_time;
-};
-
-struct sc6607_platform_data {
-	u32 vsyslim;
-	u32 batsns_en;
-	u32 vbat;
-	u32 ichg;
-	u32 vindpm;
-	u32 iindpm_dis;
-	u32 iindpm;
-	u32 ico_enable;
-	u32 iindpm_ico;
-	u32 vprechg;
-	u32 iprechg;
-	u32 iterm_en;
-	u32 iterm;
-	u32 rechg_dis;
-	u32 rechg_dg;
-	u32 rechg_volt;
-	u32 vboost;
-	u32 conv_ocp_dis;
-	u32 tsbat_jeita_dis;
-	u32 ibat_ocp_dis;
-	u32 vpmid_ovp_otg_dis;
-	u32 vbat_ovp_buck_dis;
-	u32 ibat_ocp;
-	u32 ntc_suport_1000k;
-/********* workaround: Octavian needs to enable adc start *********/
-	bool enable_adc;
-/********* workaround: Octavian needs to enable adc end *********/
-	u32 cc_pull_up_idrive;
-	u32 cc_pull_down_idrive;
-	u32 continuous_time;
-	u32 bmc_width[4];
-	u32 batfet_rst_en;
-};
-
-struct sc6607 {
-	struct device *dev;
-	struct i2c_client *client;
-
-	struct regmap *regmap;
-	struct regmap_field *regmap_fields[F_MAX_FIELDS];
-
-	const char *chg_dev_name;
-	const char *eint_name;
-
-	struct wakeup_source *suspend_ws;
-	struct wakeup_source *keep_resume_ws;
-	wait_queue_head_t wait;
-
-	atomic_t driver_suspended;
-	atomic_t charger_suspended;
-	atomic_t otg_enable_cnt;
-	unsigned long request_otg;
-
-	int irq;
-	int irq_gpio;
-	struct pinctrl *pinctrl;
-	struct pinctrl_state *charging_inter_active;
-	struct pinctrl_state *charging_inter_sleep;
-
-	bool power_good;
-	bool wd_rerun_detect;
-	struct sc6607_platform_data *platform_data;
-
-	struct power_supply *psy;
-	struct power_supply *chg_psy;
-	struct power_supply_desc psy_desc;
-
-	int vbus_type;
-	int hw_aicl_point;
-	bool open_adc_by_vac;
-	bool camera_on;
-	int disable_wdt;
-
-	bool is_force_dpdm;
-	bool usb_connect_start;
-
-	struct thermal_zone_device *tz_dev;
-
-	struct mutex dpdm_lock;
-	struct mutex adc_read_lock;
-	struct mutex i2c_rw_lock;
-	struct regulator *dpdm_reg;
-	bool dpdm_enabled;
-	struct soft_bc12 bc12;
-	int soft_bc12_type;
-	int bc12_try_count;
-	bool soft_bc12;
-	bool bc12_done;
-	int  bc12_timeouts;
-	struct timer_list bc12_timeout;
-	unsigned int oplus_chg_type;
-
-	struct mutex track_upload_lock;
-	struct mutex track_hk_err_lock;
-	u32 debug_force_hk_err;
-	bool hk_err_uploading;
-	struct delayed_work hk_err_load_trigger_work;
-	struct delayed_work hw_bc12_detect_work;
-	struct delayed_work init_status_work;
-	struct delayed_work init_status_check_work;
-	struct delayed_work tcpc_complete_work;
-	struct delayed_work get_voocphy_info_work;
-	bool track_init_done;
-
-	u8 chip_id;
-	bool pr_swap;
-	bool disable_tcpc_irq;
-#ifdef CONFIG_OPLUS_CHARGER_MTK
-	struct adapter_device *pd_adapter;
-	struct mutex charger_pd_lock;
-	struct charger_device *chg_dev;
-#endif
-	bool disable_qc;
-	bool pdqc_setup_5v;
-	int  qc_to_9v_count;
-	bool hvdcp_cfg_9v_done;
-	int hvdcp_exit_stat;
-	bool hvdcp_can_enabled;
-	unsigned long long hvdcp_detect_time;
-	unsigned long long hvdcp_detach_time;
-	struct delayed_work qc_vol_convert_work;
-
-	bool not_support_usb_btb;
-	bool sc6607_switch_ntc;
-	bool usb_aicl_enhance;
-	struct iio_channel *batt_btb_temp_chan;
-	struct iio_channel *usb_btb_temp_chan;
-	bool error_reported;
-	bool use_ufcs_phy;
-	bool use_vooc_phy;
-	struct votable *chg_disable_votable;
-	struct oplus_chg_ic_dev *ic_dev;
-	struct oplus_mms *err_topic;
-	struct mms_subscribe *err_subs;
-	struct oplus_mms *comm_topic;
-	struct mms_subscribe *comm_subs;
-
-	int found_cp_client_count;
-	struct oplus_voocphy_manager *voocphy;
-
-	struct tcpc_device *tcpc;
-	struct notifier_block pd_nb;
-
-	int cap_nr;
-	int pd_type;
-	int pd_chg_volt;
-	pd_msg_data pdo[PPS_PDO_MAX];
-	struct delayed_work sourcecap_done_work;
-	struct delayed_work charger_suspend_recovery_work;
-
-	struct delayed_work flash_mode_checkout_work;
-};
 
 struct sc6607_alert_handler {
 	u32 bit_mask;
@@ -749,7 +577,10 @@ static int sc6607_bc12_timeout_start(struct sc6607 *chip)
 
 	chg_info("start\n");
 	del_timer(&chip->bc12_timeout);
-	chip->bc12_timeout.expires = jiffies + msecs_to_jiffies(500);
+	if (chip->is_sc6607a)
+		chip->bc12_timeout.expires = jiffies + msecs_to_jiffies(800);
+	else
+		chip->bc12_timeout.expires = jiffies + msecs_to_jiffies(500);
 	chip->bc12_timeout.function = sc6607_bc12_timeout_func;
 	add_timer(&chip->bc12_timeout);
 	return 0;
@@ -1378,6 +1209,7 @@ static int sc6607_hk_get_adc(struct sc6607 *chip, enum SC6607_ADC_MODULE id)
 	if (!chip)
 		return -EINVAL;
 
+	mutex_lock(&chip->adc_read_lock);
 	sc6607_field_read(chip, F_ADC_EN, &adc_open);
 	if (!adc_open) {
 		if (id == SC6607_ADC_TSBUS || id == SC6607_ADC_TSBAT) {
@@ -1387,17 +1219,17 @@ static int sc6607_hk_get_adc(struct sc6607 *chip, enum SC6607_ADC_MODULE id)
 					if (!chip->open_adc_by_vac)
 						sc6607_field_write(chip, F_ADC_EN, false);
 					chg_err("sc6607_field_write fail rc =%d\n", rc);
+					mutex_unlock(&chip->adc_read_lock);
 					return 0;
 				}
-				mutex_lock(&chip->adc_read_lock);
 				msleep(ADC_DELAY_MS);
 				sc6607_field_write(chip, F_ADC_FREEZE, 1);
 				rc = sc6607_bulk_read(chip, reg, val, sizeof(val));
 				sc6607_field_write(chip, F_ADC_FREEZE, 0);
-				mutex_unlock(&chip->adc_read_lock);
 				if (rc < 0) {
-                                        if (!chip->open_adc_by_vac)
-                                                sc6607_field_write(chip, F_ADC_EN, false);
+					if (!chip->open_adc_by_vac)
+						sc6607_field_write(chip, F_ADC_EN, false);
+					mutex_unlock(&chip->adc_read_lock);
 					return 0;
 				}
 
@@ -1405,16 +1237,18 @@ static int sc6607_hk_get_adc(struct sc6607 *chip, enum SC6607_ADC_MODULE id)
 				ret = sc6607_tsbus_tsbat_to_convert(chip, ret, id);
 				if (!chip->open_adc_by_vac)
 					sc6607_field_write(chip, F_ADC_EN, false);
+				mutex_unlock(&chip->adc_read_lock);
 				return (int)ret;
 			} else {
+				mutex_unlock(&chip->adc_read_lock);
 				ret = sc6607_tsbus_tsbat_to_convert(chip, SC6607_ADC_TSBAT_DEFAULT, ADC_TSBUS_TSBAT_DEFAULT);
 				return (int)ret;
 			}
 		} else {
+			mutex_unlock(&chip->adc_read_lock);
 			return 0;
 		}
 	}
-	mutex_lock(&chip->adc_read_lock);
 	sc6607_field_write(chip, F_ADC_FREEZE, 1);
 	rc = sc6607_bulk_read(chip, reg, val, sizeof(val));
 	sc6607_field_write(chip, F_ADC_FREEZE, 0);
@@ -1644,12 +1478,8 @@ static int sc6607_set_input_current_limit(struct sc6607 *chip, int curr)
 	if (!chip)
 		return -EINVAL;
 
-	if (curr < SC6607_BUCK_IINDPM_OFFSET) {
+	if (curr < SC6607_BUCK_IINDPM_OFFSET)
 		curr = SC6607_BUCK_IINDPM_OFFSET;
-		ret = sc6607_field_write(chip, F_DIS_BUCKCHG_PATH, true);
-	} else {
-		ret = sc6607_field_write(chip, F_DIS_BUCKCHG_PATH, false);
-	}
 
 	val = (curr - SC6607_BUCK_IINDPM_OFFSET) / SC6607_BUCK_IINDPM_STEP;
 	ret = sc6607_field_write(chip, F_IINDPM, val);
@@ -2117,6 +1947,37 @@ static struct sc6607_platform_data *sc6607_parse_dt(struct device_node *np, stru
 	return pdata;
 }
 
+static bool is_wired_icl_votable_available(struct sc6607 *chip)
+{
+	if (!chip)
+		return false;
+
+	if (!chip->wired_icl_votable)
+		chip->wired_icl_votable = find_votable("WIRED_ICL");
+	return !!chip->wired_icl_votable;
+}
+
+static bool is_wired_fcc_votable_available(struct sc6607 *chip)
+{
+	if (!chip)
+		return false;
+
+	if (!chip->wired_fcc_votable)
+		chip->wired_fcc_votable = find_votable("WIRED_FCC");
+	return !!chip->wired_fcc_votable;
+}
+
+static void sc6607_rerun_votable_work(struct work_struct *work)
+{
+	struct sc6607 *chip =
+		container_of(work, struct sc6607, rerun_votable_work);
+
+	if (is_wired_fcc_votable_available(chip))
+		rerun_election(chip->wired_fcc_votable, false);
+	if (is_wired_icl_votable_available(chip))
+		rerun_election(chip->wired_icl_votable, true);
+}
+
 static bool sc6607_check_rerun_detect_chg_type(struct sc6607 *chip, u8 type)
 {
 	bool need_rerun_bc12 = false;
@@ -2134,10 +1995,18 @@ static bool sc6607_check_rerun_detect_chg_type(struct sc6607 *chip, u8 type)
 		sc6607_detect_init(chip);
 		sc6607_disable_hvdcp(chip);
 		sc6607_force_dpdm(chip, true);
+		sc6607_bc12_timeout_start(chip);
 		chg_info("hw rerun bc12\n");
 		return true;
 	}
-	chip->bc12_done = true;
+
+	if (chip->bc12_done == false) {
+		chg_info("bc12_done\n");
+		chip->bc12_done = true;
+		sc6607_set_input_current_limit(chip, SC6607_DEFAULT_IBUS_MA);
+		schedule_work(&chip->rerun_votable_work);
+	}
+
 	return false;
 }
 
@@ -2502,6 +2371,7 @@ static int sc6607_hk_irq_handle(struct sc6607 *chip)
 				sc6607_disable_hvdcp(chip);
 				chip->bc12.first_noti_sdp = true;
 				chip->bc12_done = false;
+				oplus_sc6607_set_ichg(chip, SC6607_BUCK_ICHG_500MA);
 				chip->bc12_timeouts = 0;
 				chip->bc12_try_count = 0;
 				if (chip->soft_bc12)
@@ -2564,6 +2434,7 @@ out:
 static int sc6607_dpdm_irq_handle(struct sc6607 *chip)
 {
 	int ret;
+	u8 hvdcp_en = false;
 	static int prev_vbus_type = SC6607_VBUS_TYPE_NONE;
 	unsigned int prev_chg_type = POWER_SUPPLY_TYPE_UNKNOWN;
 	unsigned int cur_chg_type = POWER_SUPPLY_TYPE_UNKNOWN;
@@ -2571,7 +2442,9 @@ static int sc6607_dpdm_irq_handle(struct sc6607 *chip)
 	if (!chip)
 		return -EINVAL;
 
-	sc6607_set_input_current_limit(chip, SC6607_DEFAULT_IBUS_MA);
+	sc6607_field_read(chip, F_HVDCP_EN, &hvdcp_en);
+	if (!hvdcp_en)
+		sc6607_set_input_current_limit(chip, SC6607_DEFAULT_IBUS_MA);
 	sc6607_bc12_timeout_cancel(chip);
 	prev_chg_type = chip->oplus_chg_type;
 	ret = sc6607_get_charger_type(chip, &cur_chg_type);
@@ -2596,11 +2469,12 @@ static int sc6607_dpdm_irq_handle(struct sc6607 *chip)
 	if ((cur_chg_type == POWER_SUPPLY_TYPE_USB) || (cur_chg_type == POWER_SUPPLY_TYPE_USB_CDP)) {
 		chg_info("usb_connect_start:%d\n", chip->usb_connect_start);
 		chip->oplus_chg_type = cur_chg_type;
-		bc12_set_dm_state(chip, DPDM_HIZ);
-		bc12_set_dp_state(chip, DPDM_HIZ);
-		if (chip->usb_connect_start) {
-			sc6607_inform_charger_type(chip);
+		if (!chip->is_sc6607a) {
+			bc12_set_dm_state(chip, DPDM_HIZ);
+			bc12_set_dp_state(chip, DPDM_HIZ);
 		}
+		if (chip->usb_connect_start)
+			sc6607_inform_charger_type(chip);
 	} else if (chip->oplus_chg_type == POWER_SUPPLY_TYPE_UNKNOWN && cur_chg_type != POWER_SUPPLY_TYPE_UNKNOWN) {
 		chg_info("cur_chg_type = %d, vbus_type = %d\n", cur_chg_type, chip->vbus_type);
 		chip->oplus_chg_type = cur_chg_type;
@@ -3284,7 +3158,17 @@ static DEVICE_ATTR(charger_registers, 0660, sc6607_charger_show_registers, sc660
 
 static void sc6607_charger_create_device_node(struct device *dev)
 {
-	device_create_file(dev, &dev_attr_charger_registers);
+	int ret = 0;
+
+	if (!dev) {
+		chg_err("device is null, cannot create device node.");
+		return;
+	}
+
+	ret = device_create_file(dev, &dev_attr_charger_registers);
+
+	if (ret != 0)
+		chg_err("create device node failed, ret = %d.", ret);
 }
 
 static int sc6607_enter_ship_mode(struct sc6607 *chip, bool en)
@@ -3401,11 +3285,6 @@ static int oplus_sc6607_set_aicr(struct sc6607 *chip, int current_ma)
 	chg_info("usb input max current limit=%d, aicl_point_temp=%d \n", current_ma,
 			aicl_point_temp);
 
-	if (current_ma <= 0) {
-		sc6607_set_input_current_limit(chip, 0);
-		return 0;
-	}
-
 	if (chip->usb_aicl_enhance) {
 		sc6607_input_present(chip->ic_dev, &present);
 		rc = sc6607_get_bc12_result(chip->ic_dev, &charger_type);
@@ -3437,6 +3316,11 @@ static int oplus_sc6607_set_aicr(struct sc6607 *chip, int current_ma)
 		} else {
 			oplus_chg_suspend_charger(false, PD_PDO_ICL_VOTER);
 		}
+	}
+
+	if (current_ma <= 0) {
+		sc6607_set_input_current_limit(chip, 0);
+		return 0;
 	}
 
 	if (current_ma < 500) {
@@ -3540,7 +3424,6 @@ static int oplus_sc6607_charging_disable(struct sc6607 *chip)
 		return -EINVAL;
 
 	chg_info("disable");
-	sc6607_disable_watchdog_timer(chip);
 	chip->hw_aicl_point = SC6607_HW_AICL_POINT_VOL_5V_PHASE1;
 	sc6607_set_input_volt_limit(chip, chip->hw_aicl_point);
 
@@ -3584,6 +3467,8 @@ static int oplus_sc6607_request_otg_on(struct sc6607 *chip, int index)
 	}
 
 	sc6607_disable_charger(chip);
+	sc6607_field_write(chip, F_DIS_SLEEP_FOR_OTG, true);
+	msleep(5);
 	ret = sc6607_enable_otg(chip);
 	if (ret < 0) {
 		chg_err("enable otg fail:%d\n", ret);
@@ -3661,6 +3546,9 @@ static int oplus_sc6607_enable_otg(struct sc6607 *chip)
 	if (atomic_read(&chip->driver_suspended))
 		return 0;
 
+	sc6607_field_write(chip, F_ACDRV_MANUAL_EN, 1);
+	sc6607_field_write(chip, F_ACDRV_EN, 0);
+	msleep(5);
 	ret = oplus_sc6607_request_otg_on(chip, BOOST_ON_OTG);
 	if (ret > 0) {
 		sc6607_field_write(chip, F_QB_EN, 1);
@@ -4085,6 +3973,11 @@ static int sc6607_set_icl(struct oplus_chg_ic_dev *ic_dev, bool vooc_mode, bool 
 	}
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
 
+	if (!chip->bc12_done && step) {
+		chg_info("bc12_done = %d, skip aicl\n", chip->bc12_done);
+		return rc;
+	}
+
 	if (step)
 		rc = oplus_sc6607_set_aicr(chip, icl_ma);
 	else
@@ -4106,6 +3999,12 @@ static int sc6607_set_fcc(struct oplus_chg_ic_dev *ic_dev, int fcc_ma)
 		return -ENODEV;
 	}
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
+
+	if (!chip->bc12_done && fcc_ma > SC6607_BUCK_ICHG_500MA) {
+		chg_info("bc12_done = %d, fcc_ma = %d, force fcc_ma to %d\n",
+				chip->bc12_done, fcc_ma, SC6607_BUCK_ICHG_500MA);
+		fcc_ma = SC6607_BUCK_ICHG_500MA;
+	}
 
 	return oplus_sc6607_set_ichg(chip, fcc_ma);
 }
@@ -4172,7 +4071,7 @@ static int sc6607_get_input_vol(struct oplus_chg_ic_dev *ic_dev, int *vol_mv)
 	chip = oplus_chg_ic_get_drvdata(ic_dev);
 
 	sc6607_field_read(chip, F_ACDRV_EN, &value);
-	if (oplus_is_power_off_charging() && (value == 0)) {
+	if (oplus_is_power_off_charging() && (value == 0 || chip->power_good == 0)) {
 		*vol_mv = 0;
 	} else {
 		*vol_mv = oplus_sc6607_get_vbus(chip);
@@ -4298,6 +4197,7 @@ static int sc6607_qc_detect_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
 	int retry = QC_DETECT_RETRY;
 	u8 vbus_stat;
 	struct sc6607 *chip;
+	struct votable *icl_votable;
 
 	if (ic_dev == NULL) {
 		chg_err("ic_dev is NULL");
@@ -4337,7 +4237,11 @@ static int sc6607_qc_detect_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
 		}
 	}
 	if (chip->oplus_chg_type != POWER_SUPPLY_TYPE_USB_HVDCP) {
-		oplus_chg_set_icl_by_vote(SC6607_DEFAULT_IBUS_MA, SPEC_VOTER);
+		icl_votable = find_votable("WIRED_ICL");
+		if (!icl_votable)
+			chg_err("WIRED_ICL votable not found\n");
+		else
+			rerun_election(icl_votable, true);
 	}
 	sc6607_detect_release(chip);
 	return 0;
@@ -4982,7 +4886,13 @@ static void sc6607_flash_mode_checkout_work(struct work_struct *work)
 	struct sc6607 *chip = container_of(dwork, struct sc6607, flash_mode_checkout_work);
 
 	chg_info("\n");
-	oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_PLUGIN);
+	if (!chip || !chip->ic_dev) {
+		chg_info("chip or ic_dev null");
+		return;
+	}
+
+	if (oplus_sc6607_get_vbus(chip) < SC6607_VINDPM_THRES_MIN)
+		oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_PLUGIN);
 	return;
 }
 
@@ -5023,6 +4933,17 @@ static void sc6607_subscribe_comm_topic(struct oplus_mms *topic, void *prv_data)
 	if (IS_ERR_OR_NULL(chip->comm_subs)) {
 		chg_err("subscribe comm topic error, rc=%ld\n", PTR_ERR(chip->comm_subs));
 		return;
+	}
+}
+
+static void sc6607_subscribe_wired_topic(struct oplus_mms *topic,
+					   void *prv_data)
+{
+	struct sc6607 *chip = prv_data;
+	/* waiting for wired initial and report bc12-complete, needn't callback */
+	if (chip->oplus_chg_type != POWER_SUPPLY_TYPE_UNKNOWN) {
+		chg_info("report bc12 complete again\n");
+		oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_BC12_COMPLETED);
 	}
 }
 
@@ -5167,6 +5088,7 @@ static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event, 
 	int i;
 	struct tcp_notify *noti = data;
 	struct sc6607 *chip = container_of(nb, struct sc6607, pd_nb);
+	uint8_t new_state = TYPEC_UNATTACHED;
 
 	switch (event) {
 	case TCP_NOTIFY_PR_SWAP:
@@ -5178,6 +5100,9 @@ static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event, 
 	case TCP_NOTIFY_SINK_VBUS:
 		chg_info("pd type:%d. sink vbus %dmV %dmA type(0x%02X)\n",
 		         chip->pd_type, noti->vbus_state.mv, noti->vbus_state.ma, noti->vbus_state.type);
+		if (chip->is_sc6607a && (noti->vbus_state.type & TCP_VBUS_CTRL_PR_SWAP) &&
+		   (chip->tcpc != NULL) && chip->tcpc->pd_port.pe_data.during_swap)
+			sc6607_field_write(chip, F_FORCE_REGN_BYPASS, true);
 		if (oplus_chg_get_common_charge_icl_support_flags() &&
 		    chip->pd_type == PD_CONNECT_PE_READY_SNK_APDO &&
 		    noti->vbus_state.type == TCP_VBUS_CTRL_PD_STANDBY &&
@@ -5186,6 +5111,20 @@ static int pd_tcp_notifier_call(struct notifier_block *nb, unsigned long event, 
 			oplus_chg_suspend_charger(true, TCPC_IBUS_DRAW_VOTER);
 			schedule_delayed_work(&chip->charger_suspend_recovery_work,
 			                      msecs_to_jiffies(SUSPEND_RECOVERY_DELAY_MS));
+		} else if (noti->vbus_state.ma > SINK_SUSPEND_CURRENT) {
+			oplus_chg_suspend_charger(false, TCPC_IBUS_DRAW_VOTER);
+			/* Cancel PD_PDO_ICL_VOTER suspend to allow set_aicr to re-evaluate max_pdo_current */
+			if (oplus_chg_get_common_charge_icl_support_flags()) {
+				oplus_chg_suspend_charger(false, PD_PDO_ICL_VOTER);
+			}
+		}
+		break;
+
+	case TCP_NOTIFY_TYPEC_STATE:
+		new_state = noti->typec_state.new_state;
+		if (new_state == TYPEC_UNATTACHED) {
+			chip->pr_swap = false;
+			chg_info("typec unattach, set pr_swap false!\n");
 		}
 		break;
 
@@ -5321,6 +5260,7 @@ static int sc6607_buck_probe(struct i2c_client *client, const struct i2c_device_
 	INIT_DELAYED_WORK(&chip->qc_vol_convert_work, sc6607_qc_vol_convert);
 	INIT_DELAYED_WORK(&chip->get_voocphy_info_work, sc6607_get_voocphy_info_work);
 	INIT_DELAYED_WORK(&chip->flash_mode_checkout_work, sc6607_flash_mode_checkout_work);
+	INIT_WORK(&chip->rerun_votable_work, sc6607_rerun_votable_work);
 
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 	ret = sc6607_chg_init_psy(chip);
@@ -5395,6 +5335,7 @@ static int sc6607_buck_probe(struct i2c_client *client, const struct i2c_device_
 	INIT_DELAYED_WORK(&chip->sourcecap_done_work, oplus_sourcecap_done_work);
 	INIT_DELAYED_WORK(&chip->charger_suspend_recovery_work, oplus_charger_suspend_recovery_work);
 	oplus_mms_wait_topic("common", sc6607_subscribe_comm_topic, chip);
+	oplus_mms_wait_topic("wired", sc6607_subscribe_wired_topic, chip);
 	chg_info("end!\n");
 	return 0;
 
@@ -5403,6 +5344,7 @@ err_device_register:
 	charger_device_unregister(chip->chg_dev);
 #endif
 err_init:
+	cancel_work_sync(&chip->rerun_votable_work);
 	if (!gpio_is_valid(chip->irq_gpio))
 		gpio_free(chip->irq_gpio);
 err_parse_dt:
@@ -5483,6 +5425,7 @@ static int sc6607_buck_remove(struct i2c_client *client)
 	struct sc6607 *chip = i2c_get_clientdata(client);
 
 	if (chip) {
+		cancel_work_sync(&chip->rerun_votable_work);
 #ifdef CONFIG_OPLUS_CHARGER_MTK
 		if (chip->chg_dev)
 			charger_device_unregister(chip->chg_dev);

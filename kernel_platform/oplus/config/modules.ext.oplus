@@ -25,3 +25,4 @@
 ../vendor/oplus/kernel/power/power_hook
 ../vendor/oplus/kernel/power/standby_netlink
 ../vendor/oplus/kernel/power/rpmh
+../vendor/oplus/kernel/patch

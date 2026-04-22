@@ -538,6 +538,7 @@ static void sc6607_voocphy_update_data(struct oplus_voocphy_manager *voocphy)
 	voocphy->cp_vsys = sc6607_hk_get_adc(chip, SC6607_ADC_VSYS);
 	voocphy->cp_vsys /= SC6607_UV_PER_MV;
 
+	voocphy->master_cp_ichg = voocphy->cp_ichg;
 	chg_info("ichg=%d vbus=%d vac=%d vbat=%d vsys=%d int_flag=%d tsbus=%d tsbat=%d\n",
 			voocphy->cp_ichg, voocphy->cp_vbus, voocphy->cp_vac, voocphy->cp_vbat,
 			voocphy->cp_vsys, chip->interrupt_flag, voocphy->cp_tsbus, voocphy->cp_tsbat);
@@ -586,7 +587,7 @@ static int sc6607_voocphy_get_cp_ichg(struct oplus_voocphy_manager *voocphy)
 	}
 	if (oplus_voocphy_get_fastchg_commu_ing() && !reset_read_ibus) {
 		chg_info("svooc in communication\n");
-		return voocphy->cp_ichg;
+		return voocphy->master_cp_ichg;
 	}
 
 	sc6607_voocphy_get_chg_enable(voocphy, &cp_enable);
@@ -1803,33 +1804,18 @@ static int sc6607_cp_get_work_status(struct oplus_chg_ic_dev *ic_dev, bool *star
 	}
 	chip = oplus_chg_ic_get_priv_data(ic_dev);
 
-	rc = sc6607_field_read(chip, F_CP_EN, &data);
+	if (!chip) {
+		chg_err("chip is NULL\n");
+		return -ENODEV;
+	}
+
+	rc = sc6607_field_read(chip, F_SWITCHING_STAT, &data);
 	if (rc < 0) {
-		chg_err("read F_CP_EN error, rc=%d\n", rc);
+		chg_err("read F_SWITCHING_STAT error, rc=%d\n", rc);
 		return rc;
 	}
 
 	*start = data & BIT(0);
-
-	return 0;
-}
-
-static int sc6607_cp_adc_enable(struct oplus_chg_ic_dev *ic_dev, bool en)
-{
-	struct sc6607 *chip;
-	int rc;
-
-	if (ic_dev == NULL) {
-		chg_err("oplus_chg_ic_dev is NULL");
-		return -ENODEV;
-	}
-	chip = oplus_chg_ic_get_priv_data(ic_dev);
-
-	rc = sc6607_field_write(chip, F_ADC_EN, en);
-	if (rc < 0) {
-		chg_err("read F_ADC_EN error, rc=%d\n", rc);
-		return rc;
-	}
 
 	return 0;
 }
@@ -1951,9 +1937,6 @@ static void *sc6607_cp_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_chg_
 		break;
 	case OPLUS_IC_FUNC_CP_GET_WORK_STATUS:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_WORK_STATUS, sc6607_cp_get_work_status);
-		break;
-	case OPLUS_IC_FUNC_CP_SET_ADC_ENABLE:
-		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_ADC_ENABLE, sc6607_cp_adc_enable);
 		break;
 	case OPLUS_IC_FUNC_CP_WATCHDOG_RESET:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_WATCHDOG_RESET, sc6607_cp_watchdog_reset);

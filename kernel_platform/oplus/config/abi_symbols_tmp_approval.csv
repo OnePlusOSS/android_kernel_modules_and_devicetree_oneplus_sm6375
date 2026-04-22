@@ -62,3 +62,4 @@ non_ext_task,80386228
 scx_get_md_info,80386228
 iso_masks,80386228
 __tracepoint_android_vh_init_adjust_zone_wmark, 80351790
+__tracepoint_android_vh_throttle_direct_reclaim_bypass

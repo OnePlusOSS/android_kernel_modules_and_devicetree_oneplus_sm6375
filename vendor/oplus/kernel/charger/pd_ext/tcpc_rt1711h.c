@@ -56,6 +56,7 @@
 #define SC6607_PID		0x6600
 #define PD_MSG_CRC_LEN 4
 #define PD_MSG_LEN_OVER_TOTAL_LENGTH 3
+#define PD_CCOPEN_TIMER	500 /* ms */
 
 #define CPS8851_VID     0x315C
 #define CPS8851_PID     0x8851
@@ -1096,7 +1097,7 @@ static int rt1711_is_low_power_mode(struct tcpc_device *tcpc)
 		return rv;
 
 
-	if (chip->chip_id == HUSB311_DID || chip->chip_id == CPS8851_DID) {
+	if (chip->chip_id == HUSB311_DID || chip->chip_pid == CPS8851_PID) {
 		pr_info("%s - read HUSB311_REG_BMC_CTRL=0x%x\n", __func__, rv);
 		return (rv & RT1711H_REG_BMCIO_OSC_EN) != 0;
 	}
@@ -1130,7 +1131,7 @@ static int rt1711_set_low_power_mode(
 			RT1711H_REG_VBUS_DET_EN | RT1711H_REG_BMCIO_OSC_EN;
 	}
 
-	if (chip->chip_id == HUSB311_DID || chip->chip_id == CPS8851_DID) {
+	if (chip->chip_id == HUSB311_DID || chip->chip_pid == CPS8851_PID) {
 		data &= ~RT1711H_REG_BMCIO_OSC_EN;
 		pr_info("%s - write HUSB311_REG_BMC_CTRL=0x%x\n",
 			__func__, data);
@@ -1189,7 +1190,7 @@ static int rt1711_tcpc_deinit(struct tcpc_device *tcpc)
 	rt1711_set_cc(tcpc, TYPEC_CC_DRP);
 	rt1711_set_cc(tcpc, TYPEC_CC_OPEN);
 
-	if (chip->chip_id == HUSB311_DID || chip->chip_id == CPS8851_DID) {
+	if (chip->chip_id == HUSB311_DID || chip->chip_pid == CPS8851_PID) {
 		rt1711_i2c_write8(tcpc, RT1711H_REG_I2CRST_CTRL, 0x08);
 	} else {
 		rt1711_i2c_write8(tcpc, RT1711H_REG_I2CRST_CTRL, RT1711H_REG_I2CRST_SET(true, 4));
@@ -1201,8 +1202,9 @@ static int rt1711_tcpc_deinit(struct tcpc_device *tcpc)
 	rt1711_i2c_write8(tcpc, RT1711H_REG_INTRST_CTRL, RT1711H_REG_INTRST_SET(true, 0));
 #endif
 
-	if (chip->chip_id == SC2150A_DID) {
-		mdelay(150);
+	pr_info("%s shutdown\n", __func__);
+	if (chip->chip_id == SC2150A_DID || chip->chip_id == CPS8851_DID) {
+		msleep(PD_CCOPEN_TIMER);
 		rt1711_i2c_write8(tcpc, RT1711H_REG_SWRESET, 1);
 	}
 #else
@@ -1548,11 +1550,11 @@ static int rt1711_tcpcdev_init(struct rt1711_chip *chip, struct device *dev)
 	chip->tcpc->tcpc_flags = TCPC_FLAGS_LPM_WAKEUP_WATCHDOG |
 			TCPC_FLAGS_VCONN_SAFE5V_ONLY;
 
-	if ((chip->chip_id > RT1711H_DID_B) || (chip->chip_id == CPS8851_DID))
+	if ((chip->chip_id > RT1711H_DID_B) || (chip->chip_pid == CPS8851_PID))
 		chip->tcpc->tcpc_flags |= TCPC_FLAGS_CHECK_RA_DETACH;
 
 #ifdef CONFIG_USB_PD_RETRY_CRC_DISCARD
-	if ((chip->chip_id > RT1715_DID_D) || (chip->chip_id == CPS8851_DID))
+	if ((chip->chip_id > RT1715_DID_D) || (chip->chip_pid == CPS8851_PID))
 		chip->tcpc->tcpc_flags |= TCPC_FLAGS_RETRY_CRC_DISCARD;
 #endif  /* CONFIG_USB_PD_RETRY_CRC_DISCARD */
 
@@ -1932,6 +1934,22 @@ static int rt1711_i2c_resume(struct device *dev)
 	return 0;
 }
 
+static bool is_support_oplus_chg_v2(void)
+{
+	struct device_node *node;
+	bool is_framework_v2 = false;
+
+	node = of_find_node_by_path("/soc/oplus_chg_core");
+	if (node) {
+		is_framework_v2 =
+		    of_property_read_bool(node, "oplus,chg_framework_v2");
+		of_node_put(node);
+	} else {
+		is_framework_v2 =  false;
+	}
+	return is_framework_v2;
+}
+
 static void rt1711_shutdown(struct i2c_client *client)
 {
 	struct rt1711_chip *chip = i2c_get_clientdata(client);
@@ -1948,7 +1966,10 @@ static void rt1711_shutdown(struct i2c_client *client)
 		if (chip->chip_pid == CPS8851_PID)
 			mdelay(25);
 #endif
-		tcpm_shutdown(chip->tcpc);
+		if (!is_support_oplus_chg_v2()) {
+			if (chip->tcpc)
+				tcpm_shutdown(chip->tcpc);
+		}
 	} else {
 		i2c_smbus_write_byte_data(
 			client, RT1711H_REG_SWRESET, 0x01);

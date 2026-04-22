@@ -25,6 +25,18 @@ void syna_hw_reset(struct syna_tcm *tcm_hcd)
 	msleep(100);
 }
 
+void syna_hw_power_on(struct syna_tcm *tcm_hcd)
+{
+	hbp_dev_power_type_ctrl(tcm_hcd, POWER_BUS, true);
+	msleep(10);
+	hbp_dev_power_type_ctrl(tcm_hcd, POWER_AVDD, true);
+	msleep(10);
+	hbp_dev_power_type_ctrl(tcm_hcd, POWER_VDDI, true);
+	msleep(10);
+	hbp_dev_power_type_ctrl(tcm_hcd, POWER_RESET, true);
+	msleep(100);
+}
+
 static int syna_spi_sync(void *priv, char *tx, char *rx, int32_t len)
 {
 	struct syna_tcm *tcm_hcd = (struct syna_tcm *)priv;
@@ -546,13 +558,17 @@ static int syna_dev_probe(struct platform_device *pdev)
 		goto err_exit;
 	}
 
+	syna_hw_power_on(tcm_hcd);
+
 	for (retry = 0; retry < 5; retry++) {
 		ret = syna_tcm_detect_device(tcm_hcd->tcm_dev);
 		if (ret >= 0) {
 			break;
 		}
-		hbp_err("Detect device fail, retry = %d.\n", retry);
-		syna_hw_reset(tcm_hcd);
+		if (ret == _EAGAIN) {
+			hbp_err("Detect device fail, retry = %d.\n", retry);
+			syna_hw_reset(tcm_hcd);
+		}
 	}
 
 	tcm_hcd->probe_done = true;

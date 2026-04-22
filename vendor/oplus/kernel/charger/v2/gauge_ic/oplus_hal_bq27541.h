@@ -647,6 +647,7 @@ struct chip_bq27541 {
 	unsigned int *afi_buf_len;
 	u8 *bq28z610_afi_buf;
 	int bq28z610_afi_cnt;
+	bool fast_sampling_enable;
 	bool batt_bq28z610;
 	bool batt_bq27z561;
 	bool batt_nfg8011b;
@@ -686,7 +687,7 @@ struct chip_bq27541 {
 
 	bool support_sha256_hmac;
 	bool support_extern_cmd;
-
+	bool gauge_type_error;
 	bool support_eco_design;
 
 	struct delayed_work check_iic_recover;

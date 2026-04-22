@@ -1071,10 +1071,10 @@
 		oplus,full_limit_curr_support;
 		oplus,fcl_index = <0>;
 		oplus,vb_offset = <30>;
+		oplus,batt_full_time = <60>;
 		oplus_spec,dec_step = <20>;
-		oplus_spec,dec_soh_fac = <100>;
 		oplus_spec,dec-vol-cc-full-thr = <0 400 600 800 1000 1200>;
-		oplus_spec,dec-vol-fv-full-mv = <0  20 40 60 80 100>;
+		oplus_spec,dec-vol-fv-full-mv = <0 20 20 40 40 40>;
 	};
 };
 

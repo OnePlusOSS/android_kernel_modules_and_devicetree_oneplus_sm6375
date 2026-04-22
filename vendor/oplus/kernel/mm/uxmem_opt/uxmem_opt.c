@@ -668,25 +668,39 @@ static void fill_pcplist_from_uxmempool(void *data, unsigned int order,
 	}
 }
 
+static unsigned long total_pool_pages(void)
+{
+	unsigned long total = 0;
+	int i, j;
+	struct page_pool *temp_pool;
+
+	for (i = 0; i < NUM_ORDERS; i++) {
+		temp_pool = pools[i];
+		for (j = 0; j < POOL_MIGRATETYPE_TYPES_SIZE; j++) {
+			total += temp_pool->count[j] << orders[i];
+		}
+	}
+
+	return total;
+}
+
 static void meminfo_adjust(void *data, unsigned long *totalram, unsigned long *freeram)
 {
-	unsigned long pool_pages = 0;
-	int i, j;
-	struct page_pool *pool;
-
 	if (unlikely(!ux_page_pool_enabled))
 		return;
 
 	/* make sure totalram is a kernel address */
 	if ((unsigned long)totalram > PAGE_SIZE) {
-		for (i = 0; i < NUM_ORDERS; i++) {
-			pool = pools[i];
-			for (j = 0; j < POOL_MIGRATETYPE_TYPES_SIZE; j++) {
-				pool_pages += pool->count[j] << orders[i];
-			}
-		}
-		*freeram += pool_pages;
+		*freeram += total_pool_pages();
 	}
+}
+
+static void mem_available_adjust(void *data, unsigned long *available)
+{
+	if (unlikely(!ux_page_pool_enabled))
+		return;
+
+	*available += total_pool_pages();
 }
 
 static int register_uxmem_opt_vendor_hooks(void)
@@ -738,12 +752,20 @@ static int register_uxmem_opt_vendor_hooks(void)
 		pr_err("register_trace_android_vh_si_meminfo_adjust failed! ret=%d\n", ret);
 		goto out;
 	}
+
+	ret = register_trace_android_vh_si_mem_available_adjust(mem_available_adjust, NULL);
+	if (ret != 0) {
+		pr_err("register_trace_android_vh_si_mem_available_adjust failed! ret=%d\n", ret);
+		goto out;
+	}
 out:
 	return ret;
 }
 
 static void unregister_uxmem_opt_vendor_hooks(void)
 {
+	unregister_trace_android_vh_si_mem_available_adjust(mem_available_adjust, NULL);
+
 	unregister_trace_android_vh_si_meminfo_adjust(meminfo_adjust, NULL);
 
 	unregister_trace_android_vh_rmqueue_bulk_bypass(fill_pcplist_from_uxmempool, NULL);

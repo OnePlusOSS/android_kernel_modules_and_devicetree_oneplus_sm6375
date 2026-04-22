@@ -2368,6 +2368,13 @@ int tcpc_typec_handle_timeout(struct tcpc_device *tcpc, uint32_t timer_id)
 	}
 #endif /* CONFIG_TYPEC_CHECK_LEGACY_CABLE */
 
+	if (timer_id == TYPEC_TIMER_DRP_SRC_TOGGLE
+			&& (!rv && SOUTHCHIP_PD_VID == chip_vid)
+			&& (tcpc->typec_state != typec_unattached_snk)) {
+		TCPC_DBG("Dummy SINK_TOGGLE\n");
+		return 0;
+	}
+
 	if (timer_id >= TYPEC_TIMER_START_ID)
 		tcpc_reset_typec_debounce_timer(tcpc);
 	else if (timer_id >= TYPEC_RT_TIMER_START_ID)
@@ -2579,10 +2586,9 @@ static inline int typec_handle_vbus_absent(struct tcpc_device *tcpc)
 	ret = tcpci_get_cc(tcpc);
 	if (ret < 0)
 		return ret;
-	
-	if (!typec_is_cc_no_res()) {
+
+	if (!typec_is_cc_no_res() && tcpc->typec_state <= typec_unattached_src)
 		tcpc_typec_handle_cc_change(tcpc);
-	}
 
 	return 0;
 }

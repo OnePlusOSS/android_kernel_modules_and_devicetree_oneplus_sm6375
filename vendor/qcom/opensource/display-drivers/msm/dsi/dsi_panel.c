@@ -765,6 +765,7 @@ SDE_ATRACE_BEGIN(cmd_set_prop_map[type]);
 		if (oplus_panel_pwm_switch_cmdq_delay_handle(panel, type))
 			return rc;
 	}
+	oplus_panel_video_mode_aod_off_cmd_switch(panel, &type);
 	oplus_panel_cmdq_pack_handle(panel, type, true);
 	oplus_panel_cmd_print(panel, type);
 #endif /* OPLUS_FEATURE_DISPLAY */
@@ -2295,6 +2296,10 @@ const char *cmd_set_prop_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-lp1-command",
 	"qcom,mdss-dsi-lp2-command",
 	"qcom,mdss-dsi-nolp-command",
+	"qcom,mdss-dsi-nolp-60hz-command",
+	"qcom,mdss-dsi-nolp-90hz-command",
+	"qcom,mdss-dsi-nolp-120hz-command",
+	"qcom,mdss-dsi-nolp-144hz-command",
 	"qcom,mdss-dsi-nolp-onepulse-command",
 	"PPS not parsed from DTSI, generated dynamically",
 	"ROI not parsed from DTSI, generated dynamically",
@@ -2532,6 +2537,10 @@ const char *cmd_set_state_map[DSI_CMD_SET_MAX] = {
 	"qcom,mdss-dsi-lp1-command-state",
 	"qcom,mdss-dsi-lp2-command-state",
 	"qcom,mdss-dsi-nolp-command-state",
+	"qcom,mdss-dsi-nolp-60hz-command-state",
+	"qcom,mdss-dsi-nolp-90hz-command-state",
+	"qcom,mdss-dsi-nolp-120hz-command-state",
+	"qcom,mdss-dsi-nolp-144hz-command-state",
 	"qcom,mdss-dsi-nolp-onepulse-command-state",
 	"PPS not parsed from DTSI, generated dynamically",
 	"ROI not parsed from DTSI, generated dynamically",
