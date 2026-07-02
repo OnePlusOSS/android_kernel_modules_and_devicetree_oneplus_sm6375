@@ -625,24 +625,26 @@ static void oplus_monitor_subscribe_gauge_topic(struct oplus_mms *topic,
 static void get_reverse_chg_pdo_info(
 	struct oplus_monitor *chip, int *source_pdo_volt, int *source_pdo_curr, int *sink_req_volt, int *sink_req_curr)
 {
-	char* str;
+	char *str;
+	const char *end;
 	int i = 0;
 	int num;
 	int read_pdo;
+	int len;
 	int buf[CHG_INTO_L_MAX];
 
-	oplus_reverse_chg_info_show(&chip->reverse_str);
-	if (sizeof(chip->reverse_str) > CHG_INTO_L_MAX)
+	len = oplus_reverse_chg_info_show(chip->reverse_str);
+	if (len <= 0 || len >= CHG_INTO_L_MAX)
 		return;
-	str = &chip->reverse_str;
-	while (sscanf(str, "%d%n", &num, &read_pdo) == 1) {
+	str = chip->reverse_str;
+	end = chip->reverse_str + len;
+	while (str < end && sscanf(str, "%d%n", &num, &read_pdo) == 1 && i < CHG_INTO_L_MAX) {
 		buf[i] = num;
 		i++;
 		str += read_pdo;
 
-		while (*str && !isdigit((unsigned char)*str)) {
-		    str++;
-		}
+		while (str < end && *str && !isdigit((unsigned char)*str))
+			str++;
 	}
 	if (i >= REVERSE_CHG_PDO_INFO_LEN) {
 		*source_pdo_volt = buf[0];
@@ -1361,6 +1363,8 @@ static void oplus_monitor_wired_subs_callback(struct mms_subscribe *subs,
 			chip->notify_flag = 0;
 			if (!chip->wired_online)
 				oplus_chg_track_record_dual_chan_end(chip);
+			else
+				chip->curr_derating_trig = false;
 			oplus_chg_track_update_break_ui_online();
 			schedule_work(&chip->charge_info_update_work);
 			schedule_work(&chip->wired_plugin_work);
@@ -2396,6 +2400,12 @@ static struct mms_item oplus_monitor_item[] = {
 			.down_thr_enable = false,
 			.dead_thr_enable = false,
 			.update = NULL,
+		}
+	},
+	{
+		.desc = {
+			.item_id = ERR_ITEM_CYCLE_CURRENT_DERATING,
+			.str_data = true,
 		}
 	},
 };

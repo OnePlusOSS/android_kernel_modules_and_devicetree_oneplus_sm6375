@@ -1504,6 +1504,47 @@ static int oplus_chg_vc_get_vac(struct oplus_chg_ic_dev *ic_dev, int *vac)
 	return err;
 }
 
+static int oplus_chg_vc_get_reverse_vout(struct oplus_chg_ic_dev *ic_dev, int *vac)
+{
+	struct oplus_virtual_cp_ic *vc;
+	int i;
+	int rc;
+	int err = -ENOTSUPP;
+	int vol;
+
+	if (ic_dev == NULL) {
+		chg_err("oplus_chg_ic_dev is NULL");
+		return -ENODEV;
+	}
+
+	vc = oplus_chg_ic_get_drvdata(ic_dev);
+	if (vc == NULL) {
+		chg_err("virtual_cp is NULL");
+		return -ENODEV;
+	}
+	if (vc->child_list == NULL) {
+		chg_err("child_list is NULL\n");
+		return -ENODATA;
+	}
+	for (i = 0; i < vc->child_num; i++) {
+		if (vc->child_list[i].ic_dev == NULL) {
+			chg_debug("child ic_dev[%d] is NULL, skip\n", i);
+			continue;
+		}
+		rc = oplus_chg_ic_func(vc->child_list[i].ic_dev,
+			OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT, &vol);
+		if (rc < 0 && rc != -ENOTSUPP) {
+			chg_err("child ic[%d] get reverse vout error, rc=%d\n", i, rc);
+			err = rc;
+		} else if (rc >= 0) {
+			*vac = vol;
+			return 0;
+		}
+	}
+
+	return err;
+}
+
 static int oplus_chg_vc_set_work_start_strategy(struct oplus_virtual_cp_ic *vc)
 {
 	int open_flag;
@@ -2114,6 +2155,9 @@ static void *oplus_chg_vc_get_func(struct oplus_chg_ic_dev *ic_dev, enum oplus_c
 		break;
 	case OPLUS_IC_FUNC_CP_GET_VAC:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_VAC, oplus_chg_vc_get_vac);
+		break;
+	case OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_GET_REVERSE_VOUT, oplus_chg_vc_get_reverse_vout);
 		break;
 	case OPLUS_IC_FUNC_CP_SET_WORK_START:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_CP_SET_WORK_START, oplus_chg_vc_set_work_start);

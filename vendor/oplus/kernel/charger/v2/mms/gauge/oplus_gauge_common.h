@@ -127,6 +127,10 @@ struct oplus_mms_gauge {
 	struct delayed_work gauge_nvram_stress_test_work;
 	struct delayed_work gauge_stress_read_test_work;
 	struct delayed_work gauge_term_volt_stress_test_work;
+	struct delayed_work check_imp_model_work;
+	struct delayed_work gauge_fcc_vdelta_work;
+	struct delayed_work gauge_fcc_ra0_work;
+	struct delayed_work gauge_fcc_t_ra_work;
 
 	struct votable *gauge_update_votable;
 	struct deep_dischg_spec deep_spec;
@@ -182,6 +186,7 @@ struct oplus_mms_gauge {
 	int sub_btb_curr_limit;
 	struct fcl_curves fcl;
 	int fcl_offset;
+	bool fcc_ra_cv;
 	struct oplus_gauge_nvram_stress_test nvram_test;
 	int oplus_mainbat_compensate_num;
 	int32_t oplus_mainbat_cur_thr[CURR_TEMP_REGION_MAX];

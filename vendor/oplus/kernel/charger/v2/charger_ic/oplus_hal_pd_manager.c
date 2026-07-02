@@ -171,6 +171,10 @@ static void tcpc_set_current_max(struct pd_manager_chip *chip, int max)
 	}
 	chg_info("current_max_ma = %d\n", max);
 	chip->current_max_ma = max;
+	if (oplus_chg_get_common_charge_icl_support_flags()) {
+		if (max == 0)
+			return;
+	}
 	oplus_chg_ic_virq_trigger(chip->ic_dev, OPLUS_IC_VIRQ_CURRENT_CHANGED);
 }
 
@@ -321,11 +325,11 @@ static int oplus_get_adapter_svid(struct pd_manager_chip *chip)
 		} else if (ret != TCPM_SUCCESS) {
 			chg_err("failed to discover id,  disc_svid_retries: %d, ret = %d\n",
 				disc_svid_retries, ret);
-			mdelay(DISCOVER_SVID_RETRY_DELAY);
+			msleep(DISCOVER_SVID_RETRY_DELAY);
 			continue;
 		}
 
-		mdelay(DISCOVER_SVID_INTERNAL_CMD_DELAY);
+		msleep(DISCOVER_SVID_INTERNAL_CMD_DELAY);
 		discover_svid_ret = oplus_discover_svid(tcpc_dev);
 		if (discover_svid_ret == -EFAULT) {
 			chg_err("get the svid failed, ret = %d, retries: %d, not try again.\n",
@@ -335,7 +339,7 @@ static int oplus_get_adapter_svid(struct pd_manager_chip *chip)
 			chg_err("Failed to discover svid. ret %d retries: %d\n",
 				discover_svid_ret, disc_svid_retries);
 		}
-		mdelay(DISCOVER_SVID_INTERNAL_CMD_DELAY);
+		msleep(DISCOVER_SVID_INTERNAL_CMD_DELAY);
 
 		ret = oplus_get_pd_partner_svids(chip, tcpc_dev);
 		if (ret == TCPM_SUCCESS) {
@@ -348,11 +352,11 @@ static int oplus_get_adapter_svid(struct pd_manager_chip *chip)
 			if (discover_svid_ret == TCP_DPM_RET_NOT_SUPPORT)
 				chg_info("not support to get_pd_partner_svids, ret = %d, discover_svid_ret = %d\n",
 					 ret, discover_svid_ret);
-			mdelay(DISCOVER_SVID_RETRY_DELAY);
+			msleep(DISCOVER_SVID_RETRY_DELAY);
 		}
 
 		/* retry to get the SVID by PD partner inform. */
-		mdelay(DISCOVER_SVID_INTERNAL_CMD_DELAY);
+		msleep(DISCOVER_SVID_INTERNAL_CMD_DELAY);
 		ret = oplus_get_pd_partner_inform(chip, tcpc_dev);
 		if (ret == TCPM_SUCCESS) {
 			goto trigger_irq;
@@ -366,7 +370,7 @@ static int oplus_get_adapter_svid(struct pd_manager_chip *chip)
 					  ret, discover_svid_ret);
 				goto trigger_irq;
 			}
-			mdelay(DISCOVER_SVID_RETRY_DELAY);
+			msleep(DISCOVER_SVID_RETRY_DELAY);
 		}
 	} while (ret != TCPM_SUCCESS && disc_svid_retries < DISCOVER_SVID_MAX_RETRIES);
 
@@ -2139,18 +2143,6 @@ static int oplus_pd_manager_remove(struct platform_device *pdev)
 #endif
 }
 
-static void oplus_pd_manager_shutdown(struct platform_device *pdev)
-{
-	struct pd_manager_chip *chip = platform_get_drvdata(pdev);
-
-	if (!chip)
-		return;
-	if (!chip->tcpc)
-		return;
-
-	tcpm_shutdown(chip->tcpc);
-}
-
 static const struct of_device_id oplus_pd_manager_of_match[] = {
 	{ .compatible = "oplus,hal-pd-manager" },
 	{ }
@@ -2164,7 +2156,6 @@ static struct platform_driver oplus_pd_manager_driver = {
 	},
 	.probe = oplus_pd_manager_probe,
 	.remove = oplus_pd_manager_remove,
-	.shutdown   = oplus_pd_manager_shutdown,
 };
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(5, 4, 0))

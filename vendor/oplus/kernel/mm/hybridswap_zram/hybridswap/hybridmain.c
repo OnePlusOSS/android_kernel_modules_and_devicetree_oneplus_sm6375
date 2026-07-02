@@ -533,8 +533,7 @@ static unsigned long memcg_lru_pages(struct mem_cgroup *memcg,
 
 static bool inactive_file_is_low(struct mem_cgroup *memcg)
 {
-	unsigned long nr_inactive_file = memcg_page_state_local(memcg, NR_INACTIVE_FILE);
-	return nr_inactive_file < (SZ_512M + SZ_256M) / PAGE_SIZE;
+	return global_node_page_state(NR_INACTIVE_FILE) < totalram_pages() / 16;
 }
 
 /* Shrink by free a batch of pages */
@@ -731,7 +730,7 @@ static ssize_t mem_cgroup_force_shrink_anon_percent(struct kernfs_open_file *of,
 
 	if (nr_need_reclaim > 0) {
 		ret = force_shrink_batch(memcg, nr_need_reclaim, &nr_reclaimed,
-						batch, false, false);
+						batch, true, false);
 	}
 #ifdef CONFIG_CONT_PTE_HUGEPAGE_64K_ZRAM
 out:

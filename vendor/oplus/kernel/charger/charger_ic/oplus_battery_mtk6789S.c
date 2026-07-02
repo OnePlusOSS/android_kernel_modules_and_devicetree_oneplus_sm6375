@@ -7521,7 +7521,7 @@ int oplus_chg_get_pd_type(void)
 			if (oplus_pps_check_third_pps_support())
 				return PD_PPS_ACTIVE;
 			else
-				return PD_INACTIVE;
+				return PD_ACTIVE;
 		} else {
 			return PD_INACTIVE;
 		}
@@ -8417,8 +8417,18 @@ int oplus_chg_set_pd_config_voocphy(void) {
 
 int oplus_chg_set_pd_config_mt6375(void) {
 	int ret = -1;
+	int ibus = 0;
+	int pd_input_current = 0;
+
+	if (g_oplus_chip)
+		pd_input_current = g_oplus_chip->limits.pd_input_current_charger_ma;
+	ibus = (oplus_mt6375_get_chg_ibus() / 1000); /* mA*/
+	chg_info("ibus: %d pd_input_current: %d", ibus, pd_input_current);
 
 	if (is_mtksvooc_project) {
+		if (ibus > pd_input_current)
+			oplus_mt6375_input_current_limit_write(pd_input_current);
+
 		if (oplus_chg_get_voocphy_support())
 			ret = oplus_chg_set_pd_config_voocphy();
 		else

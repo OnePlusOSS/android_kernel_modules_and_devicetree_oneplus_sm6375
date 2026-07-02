@@ -102,7 +102,9 @@ RT_REG_DECL(TCPC_V10_REG_FAULT_STATUS, 1, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_COMMAND, 1, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_MSG_HDR_INFO, 1, RT_NORMAL_WR_ONCE, {});
 RT_REG_DECL(TCPC_V10_REG_RX_DETECT, 1, RT_NORMAL_WR_ONCE, {});
-RT_REG_DECL(TCPC_V10_REG_RX_BYTE_CNT, 4, RT_VOLATILE, {});
+RT_REG_DECL(TCPC_V10_REG_RX_BYTE_CNT, 1, RT_VOLATILE, {});
+RT_REG_DECL(TCPC_V10_REG_RX_BUF_FRAME_TYPE, 1, RT_VOLATILE, {});
+RT_REG_DECL(TCPC_V10_REG_RX_HDR, 2, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_RX_DATA, 28, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_TRANSMIT, 1, RT_VOLATILE, {});
 RT_REG_DECL(TCPC_V10_REG_TX_BYTE_CNT, 1, RT_NORMAL_WR_ONCE, {});
@@ -153,6 +155,8 @@ static const rt_register_map_t rt1711_chip_regmap[] = {
 	RT_REG(TCPC_V10_REG_MSG_HDR_INFO),
 	RT_REG(TCPC_V10_REG_RX_DETECT),
 	RT_REG(TCPC_V10_REG_RX_BYTE_CNT),
+	RT_REG(TCPC_V10_REG_RX_BUF_FRAME_TYPE),
+	RT_REG(TCPC_V10_REG_RX_HDR),
 	RT_REG(TCPC_V10_REG_RX_DATA),
 	RT_REG(TCPC_V10_REG_TRANSMIT),
 	RT_REG(TCPC_V10_REG_TX_BYTE_CNT),
@@ -1202,7 +1206,6 @@ static int rt1711_tcpc_deinit(struct tcpc_device *tcpc)
 	rt1711_i2c_write8(tcpc, RT1711H_REG_INTRST_CTRL, RT1711H_REG_INTRST_SET(true, 0));
 #endif
 
-	pr_info("%s shutdown\n", __func__);
 	if (chip->chip_id == SC2150A_DID || chip->chip_id == CPS8851_DID) {
 		msleep(PD_CCOPEN_TIMER);
 		rt1711_i2c_write8(tcpc, RT1711H_REG_SWRESET, 1);
@@ -1934,22 +1937,6 @@ static int rt1711_i2c_resume(struct device *dev)
 	return 0;
 }
 
-static bool is_support_oplus_chg_v2(void)
-{
-	struct device_node *node;
-	bool is_framework_v2 = false;
-
-	node = of_find_node_by_path("/soc/oplus_chg_core");
-	if (node) {
-		is_framework_v2 =
-		    of_property_read_bool(node, "oplus,chg_framework_v2");
-		of_node_put(node);
-	} else {
-		is_framework_v2 =  false;
-	}
-	return is_framework_v2;
-}
-
 static void rt1711_shutdown(struct i2c_client *client)
 {
 	struct rt1711_chip *chip = i2c_get_clientdata(client);
@@ -1966,10 +1953,8 @@ static void rt1711_shutdown(struct i2c_client *client)
 		if (chip->chip_pid == CPS8851_PID)
 			mdelay(25);
 #endif
-		if (!is_support_oplus_chg_v2()) {
-			if (chip->tcpc)
-				tcpm_shutdown(chip->tcpc);
-		}
+		if (chip->tcpc)
+			tcpm_shutdown(chip->tcpc);
 	} else {
 		i2c_smbus_write_byte_data(
 			client, RT1711H_REG_SWRESET, 0x01);

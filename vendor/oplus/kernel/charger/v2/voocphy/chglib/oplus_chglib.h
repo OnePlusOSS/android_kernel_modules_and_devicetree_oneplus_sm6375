@@ -65,6 +65,8 @@ struct hw_vphy_info {
 	int (*vphy_get_frame_head)(struct device *dev, int *head);
 	void (*vphy_set_wired_online)(struct device *dev, int online);
 	bool (*vphy_get_fastchg_commu_ing)(struct device *dev);
+	void (*vphy_set_chg_vac2v2x_uvp)(struct device *dev, bool enable);
+	void (*vphy_set_usb_dischg_enable)(struct device *dev, bool enable);
 };
 
 struct vphy_chip {

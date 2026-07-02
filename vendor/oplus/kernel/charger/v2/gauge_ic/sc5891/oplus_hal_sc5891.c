@@ -54,17 +54,6 @@
 #define BATT_SN_MAX				5
 #define MAX_SN_SIZE				BATT_SN_MAX * BATT_SN_LEN
 
-struct sc5891_track_bundle {
-	int batt_max;
-	int batt_curr;
-	int batt_temp;
-	int batt_soc;
-	int batt_fcc;
-	int batt_cc;
-	int batt_rm;
-	int batt_soh;
-};
-
 struct sc5891_device {
 	struct device *dev;
 	struct oplus_chg_ic_dev *ic_dev;
@@ -92,6 +81,7 @@ struct sc5891_device {
 	bool hardware_init_ok;
 	bool prikey_ok;
 	int prikey_index;
+	int sc5891_fault_mitigation;
 	int batt_info_num;
 	uint8_t dt_batt_info[BATT_SN_MAX][BATT_SN_LEN + 1];
 	uint8_t batt_info[BATT_SN_LEN + 1];
@@ -147,6 +137,32 @@ const static struct sc5891_data_cfg sc5891_data_cfg_table[] = {
 	[SC5891_DATA_ID_DEEP_DISCHG_COUNT]	= {5, 1, 0, 2, true},
 	[SC5891_DATA_ID_SILI_VCT]		= {5, 1, 9, 2, true},
 };
+static int sc5891_ic_get_romid(struct sc5891_device *chip, uint64_t *id);
+#define SC5891_PINCTRL_AVOID_RETRY_MAX	3
+static void sc5891_pinctrl_avoid(struct sc5891_device *chip, bool locked)
+{
+	int rc = 0;
+	int i;
+	if (chip->sc5891_fault_mitigation == 1) {
+		if (locked) {
+			mutex_lock(&chip->pinctrl_lock);
+			pinctrl_select_state(chip->pinctrl, chip->pinctrl_default);
+			mutex_unlock(&chip->pinctrl_lock);
+			for (i = 0; i < SC5891_PINCTRL_AVOID_RETRY_MAX; i++) {
+				rc = sc5891_ic_get_romid(chip, &chip->romid.value);
+				if (rc < 0) {
+					chg_err("get romid failed\n");
+					continue;
+				}
+				break;
+			}
+		} else {
+			mutex_lock(&chip->pinctrl_lock);
+			pinctrl_select_state(chip->pinctrl, chip->pinctrl_output_low);
+			mutex_unlock(&chip->pinctrl_lock);
+		}
+	}
+}
 
 static int sc5891_get_current_time_s(void)
 {
@@ -391,7 +407,6 @@ static int sc5891_send_cmd(struct sc5891_device *chip, struct sc5891_tansfer_dat
 	rc = sc5891_i2c_write(chip, send_data);
 	if (rc < 0) {
 		chg_err("write cmd failed %d\n", rc);
-		rc = -SC5891_RESULT_I2C_FAIL;
 		goto i2c_err;
 	}
 	if (send_data->cmd == SC5891_CMD_SHUTDOWN) {
@@ -406,7 +421,6 @@ static int sc5891_send_cmd(struct sc5891_device *chip, struct sc5891_tansfer_dat
 	rc = sc5891_i2c_read(chip, recv_data);
 	if (rc < 0) {
 		chg_err("read result failed %d\n", rc);
-		rc = -SC5891_RESULT_I2C_FAIL;
 		goto i2c_err;
 	}
 
@@ -430,6 +444,7 @@ static int sc5891_send_cmd(struct sc5891_device *chip, struct sc5891_tansfer_dat
 i2c_err:
 	sc5891_upload_track(chip, SEC_IC_ERR_I2C, "$$romid@@0x%x%x$$cmd@@0x%x$$rc@@%d",
 		chip->romid.high_half, chip->romid.low_half, send_data->cmd, rc);
+	rc = -SC5891_RESULT_I2C_FAIL; /*avoid double tracking*/
 	sc5891_hardware_reset(chip);
 out:
 	mutex_unlock(&chip->cmd_rw_lock);
@@ -802,15 +817,18 @@ static int sc5891_read_data(struct sc5891_device *chip, int id,
 
 	mutex_lock(&chip->flow_lock);
 	__pm_stay_awake(chip->rw_wake_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	for (i = 0; i < cfg->page_num; i++) {
 		rc = __sc5891_read_page(chip, cfg->page_id + i, page_buf + i * SC5891_INFO_PAGE_SIZE);
 		if (rc < 0) {
-			mutex_unlock(&chip->flow_lock);
+			sc5891_pinctrl_avoid(chip, false);
 			__pm_relax(chip->rw_wake_lock);
+			mutex_unlock(&chip->flow_lock);
 			goto err;
 		}
 	}
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	__pm_relax(chip->rw_wake_lock);
 	mutex_unlock(&chip->flow_lock);
 
@@ -1005,6 +1023,7 @@ static int sc5891_write_data(struct sc5891_device *chip, int id,
 
 	mutex_lock(&chip->flow_lock);
 	__pm_stay_awake(chip->rw_wake_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_mem_unlock(chip);
 	if (rc < 0) {
 		chg_err("mem unlock failed, rc=%d\n", rc);
@@ -1021,8 +1040,9 @@ static int sc5891_write_data(struct sc5891_device *chip, int id,
 	}
 
 err:
-	__pm_relax(chip->rw_wake_lock);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
+	__pm_relax(chip->rw_wake_lock);
 	mutex_unlock(&chip->flow_lock);
 	return rc;
 }
@@ -1425,27 +1445,32 @@ static int sc5891_hardware_init(struct sc5891_device *chip)
 	}
 
 	chg_info("sc5891_hardware_init");
+	sc5891_pinctrl_avoid(chip, true);
+
 	rc = sc5891_ic_get_romid(chip, &chip->romid.value);
 	if (rc < 0) {
 		chg_err("sc5891 get romid fail. rc = %d\n", rc);
-		return rc;
+		goto err;
 	}
 
 	if (chip->romid.ven_code != SC5891_ROMID_VENDOR ||
 	    chip->romid.cid != SC5891_ROMID_CID) {
 		chg_err("sc5891 verify romid fail:romid:0x%x%x", chip->romid.high_half, chip->romid.low_half);
-		return -EINVAL;
+		rc = -EINVAL;
+		goto err;
 	}
 
 	rc = sc5891_ic_get_public_key_cert(chip, chip->pubkey, chip->cert);
 	if (rc < 0) {
 		chg_err("sc5891 get pubkey fail. rc = %d\n", rc);
-		return rc;
+		goto err;
 	}
 
 	sc5891_ic_enter_shutdown(chip);
 	chip->hardware_init_ok = true;
-	return 0;
+err:
+	sc5891_pinctrl_avoid(chip, false);
+	return rc;
 }
 
 static int sc5891_get_romid(struct oplus_chg_ic_dev *ic_dev, uint8_t *romid, int *len)
@@ -1465,8 +1490,10 @@ static int sc5891_get_romid(struct oplus_chg_ic_dev *ic_dev, uint8_t *romid, int
 	}
 
 	mutex_lock(&chip->flow_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_get_romid(chip, &chip->romid.value);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	mutex_unlock(&chip->flow_lock);
 
 	if (rc < 0)
@@ -1509,6 +1536,7 @@ static int sc5891_write_page(struct oplus_chg_ic_dev *ic_dev,
 
 	mutex_lock(&chip->flow_lock);
 	__pm_stay_awake(chip->rw_wake_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_mem_unlock(chip);
 	if (rc < 0)
 		goto err_out;
@@ -1524,8 +1552,9 @@ static int sc5891_write_page(struct oplus_chg_ic_dev *ic_dev,
 	rc = __sc5891_write_page(chip, page_id, data);
 
 err_out:
-	__pm_relax(chip->rw_wake_lock);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
+	__pm_relax(chip->rw_wake_lock);
 	mutex_unlock(&chip->flow_lock);
 	return rc;
 }
@@ -1552,6 +1581,8 @@ static int sc5891_read_page(struct oplus_chg_ic_dev *ic_dev,
 		return -EINVAL;
 	}
 	mutex_lock(&chip->flow_lock);
+	__pm_stay_awake(chip->rw_wake_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = __sc5891_read_page(chip, page_id, data);
 	if (rc < 0)
 		goto err_out;
@@ -1559,6 +1590,8 @@ static int sc5891_read_page(struct oplus_chg_ic_dev *ic_dev,
 
 err_out:
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
+	__pm_relax(chip->rw_wake_lock);
 	mutex_unlock(&chip->flow_lock);
 	return rc;
 }
@@ -1586,8 +1619,10 @@ static int sc5891_ecdsa(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 	}
 
 	mutex_lock(&chip->flow_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_ecdsa(chip, valid);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	mutex_unlock(&chip->flow_lock);
 
 	return rc;
@@ -1618,8 +1653,10 @@ static int sc5891_ecw(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 	}
 
 	mutex_lock(&chip->flow_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_ecw(chip, valid);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	mutex_unlock(&chip->flow_lock);
 
 	return rc;
@@ -1642,7 +1679,9 @@ static int sc5891_enter_shutdown(struct oplus_chg_ic_dev *ic_dev, bool *valid)
 	}
 
 	mutex_lock(&chip->flow_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	mutex_unlock(&chip->flow_lock);
 
 	*valid = (rc == 0);
@@ -2165,6 +2204,10 @@ static int sc5891_ic_register(struct sc5891_device *chip)
 	rc = of_property_read_u32(chip->dev->of_node, "oplus,prikey_index", &chip->prikey_index);
 	if (rc < 0)
 		chip->prikey_index = SC5891_PRIKEY_DEFAULT_INDEX;
+	rc = of_property_read_u32(chip->dev->of_node, "oplus,sc5891_fault_mitigation", &chip->sc5891_fault_mitigation);
+	if (rc < 0)
+		chip->sc5891_fault_mitigation = 0;
+	chg_info("sc5891_fault_mitigation: %d\n", chip->sc5891_fault_mitigation);
 	sc5891_parse_batt_info(chip);
 
 	ic_cfg.name = chip->dev->of_node->name;
@@ -2296,8 +2339,13 @@ static void sc5891_gauge_update_work(struct work_struct *work)
 	oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_CC, &data, false);
 	if (last_cc == data.intval)
 		return;
-	last_cc = data.intval;
 
+	if (atomic_read(&chip->pm_suspended) == 1) {
+		chg_err("in suspend");
+		return;
+	}
+
+	last_cc = data.intval;
 	sc5891_upload_gauge_data(chip);
 }
 
@@ -2381,11 +2429,13 @@ static void sc5891_hardware_init_work(struct work_struct *work)
 	}
 
 	mutex_lock(&chip->flow_lock);
+	sc5891_pinctrl_avoid(chip, true);
 	rc = sc5891_extern_verify_cert(chip->pubkey, chip->cert);
 	if (rc < 0)
 		chg_err("cert verify failed\n");
 	rc = sc5891_ic_ecdsa(chip, &chip->cert_valid);
 	sc5891_ic_enter_shutdown(chip);
+	sc5891_pinctrl_avoid(chip, false);
 	mutex_unlock(&chip->flow_lock);
 	chg_info("hardware init ok, ecdsa result:%d", chip->cert_valid);
 }

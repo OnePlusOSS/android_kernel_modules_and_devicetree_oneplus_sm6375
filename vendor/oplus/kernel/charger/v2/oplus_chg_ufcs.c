@@ -532,6 +532,8 @@ struct oplus_ufcs {
 	struct oplus_chg_strategy *third_curve_strategy;
 	struct oplus_chg_strategy *strategy;
 	struct oplus_chg_strategy *vfa_strategy;
+	struct oplus_chg_strategy *ccd_strategy;
+	struct mutex ccd_lock;
 
 	struct oplus_chg_strategy **oplus_lcf_strategy;
 	struct oplus_chg_strategy **third_lcf_strategy;
@@ -624,11 +626,13 @@ struct oplus_ufcs {
 
 	int ufcs_fastchg_batt_temp_status;
 	int ufcs_temp_cur_range;
+	int temp_region_cnt;
 	int ufcs_cool_full_temp_range;
 	int ufcs_low_curr_full_temp_status;
 	int batt_bal_curr_limit;
 	int preliminary_imp_check_cnt;
 	bool need_preliminary_imp_check;
+	atomic_t temp_recover_debounce_thd;
 
 	bool led_on;
 	struct ufcs_pr_config pr_config;
@@ -885,11 +889,43 @@ static int32_t oplus_ufcs_get_curve_vbus(struct oplus_ufcs *chip)
 	return data.target_vbus;
 }
 
+static int oplus_ufcs_apply_ccd(struct oplus_ufcs *chip, int target_ibus)
+{
+	int derated_ibus;
+
+	if (!chip || !chip->ccd_strategy)
+		return target_ibus;
+	mutex_lock(&chip->ccd_lock);
+	oplus_chg_strategy_set_process_data(chip->ccd_strategy, "curve_ibus", target_ibus);
+	if (oplus_chg_strategy_get_data(chip->ccd_strategy, &derated_ibus) >= 0)
+		target_ibus = derated_ibus;
+	mutex_unlock(&chip->ccd_lock);
+	return target_ibus;
+}
+
+static void oplus_ufcs_ccd_strategy_init(struct oplus_ufcs *chip)
+{
+	int rc;
+	u32 ccd_temp_region;
+
+	if (!chip || !chip->ccd_strategy)
+		return;
+	ccd_temp_region = chip->ufcs_temp_cur_range > 0 ? chip->ufcs_temp_cur_range - 1 : 0;
+	rc = oplus_chg_strategy_init(chip->ccd_strategy);
+	if (rc < 0) {
+		oplus_chg_strategy_release(chip->ccd_strategy);
+		chip->ccd_strategy = NULL;
+		return;
+	}
+	oplus_chg_strategy_set_process_data(chip->ccd_strategy, "temp_region", ccd_temp_region);
+}
+
 int oplus_ufcs_get_curve_ibus(struct oplus_mms *topic)
 {
 	struct oplus_ufcs *chip;
 	struct puc_strategy_ret_data data;
 	int rc;
+	int target_ibus;
 
 	if (topic == NULL)
 		return -EINVAL;
@@ -903,8 +939,10 @@ int oplus_ufcs_get_curve_ibus(struct oplus_mms *topic)
 		chg_err("can't get curve ibus, rc=%d\n", rc);
 		return rc;
 	}
-
-	return min(data.target_ibus, chip->adapter_max_curr);
+	target_ibus = data.target_ibus;
+	if (chip->ccd_strategy)
+		target_ibus = oplus_ufcs_apply_ccd(chip, data.target_ibus);
+	return min(target_ibus, chip->adapter_max_curr);
 }
 
 static int oplus_ufcs_switch_to_normal(struct oplus_ufcs *chip)
@@ -2158,6 +2196,18 @@ static int oplus_ufcs_parse_vfa_strategy(struct oplus_ufcs *chip)
 	return 0;
 }
 
+static int oplus_ufcs_parse_ccd_strategy(struct oplus_ufcs *chip)
+{
+	struct device_node *node = oplus_get_node_by_type(chip->dev->of_node);
+
+	chip->ccd_strategy = oplus_chg_strategy_alloc_by_node("cycle_current_derating", node);
+	if (IS_ERR_OR_NULL(chip->ccd_strategy))
+		chip->ccd_strategy = NULL;
+	if (chip->ccd_strategy)
+		oplus_chg_strategy_set_process_data(chip->ccd_strategy, "temp_region_cnt", chip->temp_region_cnt);
+	return 0;
+}
+
 static void oplus_ufcs_vfa_reset(struct oplus_ufcs *chip)
 {
 	if (chip->vfa_strategy)
@@ -2222,8 +2272,10 @@ static bool oplus_ufcs_charge_allow_check(struct oplus_ufcs *chip)
 		chg_temp = data.intval;
 	}
 
-	if (chg_temp < chip->limits.ufcs_low_temp ||
-	    chg_temp >= chip->limits.ufcs_high_temp) {
+	if (chg_temp < chip->limits.ufcs_low_temp - atomic_read(&chip->temp_recover_debounce_thd) ||
+	    chg_temp >= chip->limits.ufcs_high_temp + atomic_read(&chip->temp_recover_debounce_thd)) {
+		chg_err("chg_temp:%d temp_recover_debounce_thd:%d \n", chg_temp, atomic_read(&chip->temp_recover_debounce_thd));
+		atomic_set(&chip->temp_recover_debounce_thd, 0);
 		vote(chip->ufcs_not_allow_votable, BATT_TEMP_VOTER, true, 1, false);
 	} else if (chg_temp > (chip->limits.ufcs_normal_high_temp - UFCS_TEMP_WARM_RANGE_THD)) {
 		if (chip->ui_soc > chip->limits.ufcs_warm_allow_soc ||
@@ -2419,6 +2471,7 @@ static void oplus_ufcs_force_exit(struct oplus_ufcs *chip)
 		vote(chip->chg_disable_votable, UFCS_VOTER, false, 0, false);
 	oplus_cpa_request_unlock(chip->cpa_topic, UFCS_VOTER);
 	oplus_ufcs_publish_test_mode(chip);
+	atomic_set(&chip->temp_recover_debounce_thd, 0);
 }
 
 static void oplus_ufcs_soft_exit(struct oplus_ufcs *chip)
@@ -2446,6 +2499,7 @@ static void oplus_ufcs_soft_exit(struct oplus_ufcs *chip)
 	if (is_disable_charger_vatable_available(chip))
 		vote(chip->chg_disable_votable, UFCS_VOTER, false, 0, false);
 	oplus_ufcs_publish_test_mode(chip);
+	atomic_set(&chip->temp_recover_debounce_thd, 0);
 }
 
 static int oplus_ufcs_get_verify_data(struct oplus_ufcs *chip, int index)
@@ -3201,6 +3255,7 @@ static int oplus_ufcs_charge_start(struct oplus_ufcs *chip)
 						chg_err("strategy_init error, not support ufcs fast charge\n");
 						return rc;
 					}
+					oplus_ufcs_ccd_strategy_init(chip);
 					if (chip->oplus_ufcs_adapter) {
 						for (i = 0; i < chip->oplus_lcf_num && chip->oplus_lcf_strategy[i]; i++) {
 							rc = oplus_chg_strategy_init(chip->oplus_lcf_strategy[i]);
@@ -4920,6 +4975,7 @@ static void oplus_ufcs_monitor_work(struct work_struct *work)
 	int rc;
 	int delay = UFCS_MONITOR_TIME_MS;
 	int range_switch_dealy = UFCS_TEMP_SWITCH_DELAY;
+	int target_ibus;
 	bool switch_to_ffc = false;
 
 	if (!chip->ufcs_charging) {
@@ -4978,7 +5034,12 @@ static void oplus_ufcs_monitor_work(struct work_struct *work)
 			switch_to_ffc = true;
 			goto exit;
 		}
-		vote(chip->ufcs_curr_votable, STEP_VOTER, true, data.target_ibus, false);
+		if (chip->ccd_strategy) {
+			target_ibus = oplus_ufcs_apply_ccd(chip, data.target_ibus);
+			vote(chip->ufcs_curr_votable, STEP_VOTER, true, target_ibus, false);
+		} else {
+			vote(chip->ufcs_curr_votable, STEP_VOTER, true, data.target_ibus, false);
+		}
 		oplus_ufcs_set_soc_current(chip);
 
 		if (chip->curr_set_ma == UFCS_PRELIMINARY_IMP_CHECK_CURR
@@ -5414,6 +5475,7 @@ static void oplus_ufcs_allow_recover_check(struct oplus_ufcs *chip)
 			chg_info("allow ufcs charging, shell_temp=%d\n", chip->shell_temp);
 			if (chip->config.ufcs_need_reset_adapter)
 				chip->reset_adapter = true;
+			atomic_set(&chip->temp_recover_debounce_thd, 1);
 			vote(chip->ufcs_not_allow_votable, BATT_TEMP_VOTER, false, 0, false);
 		} else if (chip->shell_temp <= chip->limits.ufcs_high_temp &&
 		    chip->shell_temp > (chip->limits.ufcs_normal_high_temp - UFCS_TEMP_WARM_RANGE_THD)) {
@@ -5423,6 +5485,7 @@ static void oplus_ufcs_allow_recover_check(struct oplus_ufcs *chip)
 					    chip->shell_temp, vbat_mv, chip->ui_soc);
 				if (chip->config.ufcs_need_reset_adapter)
 					chip->reset_adapter = true;
+				atomic_set(&chip->temp_recover_debounce_thd, 1);
 				vote(chip->ufcs_not_allow_votable, BATT_TEMP_VOTER, false, 0, false);
 			}
 		}
@@ -7812,6 +7875,10 @@ static int oplus_ufcs_get_input_node_impedance(void *data)
 	if (rc < 0 || iin == 0) {
 		chg_debug("direct charge project use sourceinfo iin, rc=%d\n", rc);
 		iin =  UFCS_SOURCE_INFO_CURR(chip->src_info);
+		if (iin == 0) {
+			chg_err("iin is 0, can't calculate input node impedance\n");
+			return -EINVAL;
+		}
 	}
 
 	vchg = UFCS_SOURCE_INFO_VOL(chip->src_info);
@@ -7851,6 +7918,10 @@ static int oplus_ufcs_get_mos_node_impedance(void *data)
 	}
 
 	iin =  UFCS_SOURCE_INFO_CURR(chip->src_info);
+	if (iin == 0) {
+		chg_err("iin is 0, can't calculate input node impedance\n");
+		return -EINVAL;
+	}
 	vchg = UFCS_SOURCE_INFO_VOL(chip->src_info);
 	batt_num = oplus_gauge_get_batt_num();
 
@@ -8317,6 +8388,25 @@ exit:
 	return rc;
 }
 
+static void oplus_ufcs_get_temp_region_cnt(struct oplus_ufcs *chip, struct device_node *node)
+{
+	int rc;
+
+	if (chip == NULL || node == NULL) {
+		chg_err("chip or node is NULL\n");
+		if (chip)
+			chip->temp_region_cnt = 0;
+		return;
+	}
+	rc = of_property_count_elems_of_size(node, "oplus,temp_range", sizeof(u32));
+	if (rc <= 0) {
+		chg_err("get oplus,temp_range invalid, rc=%d\n", rc);
+		chip->temp_region_cnt = 0;
+		return;
+	}
+	chip->temp_region_cnt = rc - 1;
+}
+
 static int oplus_ufcs_probe(struct platform_device *pdev)
 {
 	struct oplus_ufcs *chip;
@@ -8331,6 +8421,7 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	}
 	chip->dev = &pdev->dev;
 	platform_set_drvdata(pdev, chip);
+	mutex_init(&chip->ccd_lock);
 	chip->reset_adapter = false;
 	chip->handshake_ok = false;
 	init_completion(&chip->reset_abnormal_ack);
@@ -8367,6 +8458,7 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	INIT_WORK(&chip->cp_offline_handler_work, oplus_ufcs_cp_offline_handler_work);
 
 	oplus_ufcs_parse_temperature_strategy_init(chip);
+	atomic_set(&chip->temp_recover_debounce_thd, 0);
 
 	rc = oplus_ufcs_init_imp_node(chip);
 	if (rc < 0)
@@ -8409,6 +8501,7 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	if (rc < 0)
 		goto third_startegy_err;
 
+	oplus_ufcs_get_temp_region_cnt(chip, startegy_node);
 	startegy_node = of_get_child_by_name(oplus_get_node_by_type(pdev->dev.of_node), "ufcs_charge_oplus_strategy");
 	if (startegy_node == NULL) {
 		chg_err("ufcs_charge_oplus_strategy not found\n");
@@ -8426,6 +8519,8 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	oplus_ufcs_parse_lcf_strategy_dt(chip);
 
 	oplus_ufcs_parse_vfa_strategy(chip);
+
+	oplus_ufcs_parse_ccd_strategy(chip);
 
 	/* Encryption is not required when the maximum current is less than 3A */
 	if (chip->config.curr_max_ma <= UFCS_VERIFY_CURR_THR_MA) {
@@ -8460,6 +8555,10 @@ static int oplus_ufcs_probe(struct platform_device *pdev)
 	return 0;
 
 oplus_startegy_err:
+	if (chip->ccd_strategy != NULL) {
+		oplus_chg_strategy_release(chip->ccd_strategy);
+		chip->ccd_strategy = NULL;
+	}
 	if (chip->third_curve_strategy != NULL)
 		oplus_chg_strategy_release(chip->third_curve_strategy);
 third_startegy_err:
@@ -8484,6 +8583,7 @@ vote_init_err:
 imp_node_init_err:
 	if (chip->temperature_strategy)
 		oplus_chg_strategy_release(chip->temperature_strategy);
+	mutex_destroy(&chip->ccd_lock);
 	devm_kfree(&pdev->dev, chip);
 	return rc;
 }
@@ -8522,6 +8622,8 @@ static int oplus_ufcs_remove(struct platform_device *pdev)
 		oplus_mms_unsubscribe(chip->plc_subs);
 	if (chip->vfa_strategy != NULL)
 		oplus_chg_strategy_release(chip->vfa_strategy);
+	if (chip->ccd_strategy != NULL)
+		oplus_chg_strategy_release(chip->ccd_strategy);
 	if (chip->oplus_curve_strategy != NULL)
 		oplus_chg_strategy_release(chip->oplus_curve_strategy);
 	if (chip->third_curve_strategy != NULL)
@@ -8553,6 +8655,7 @@ static int oplus_ufcs_remove(struct platform_device *pdev)
 		oplus_imp_node_unregister(chip->dev, chip->input_imp_node);
 	if (chip->temperature_strategy)
 		oplus_chg_strategy_release(chip->temperature_strategy);
+	mutex_destroy(&chip->ccd_lock);
 	devm_kfree(&pdev->dev, chip);
 
 #if (LINUX_VERSION_CODE < KERNEL_VERSION(6, 12, 0))

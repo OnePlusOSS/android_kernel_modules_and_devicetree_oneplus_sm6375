@@ -114,33 +114,45 @@ enum oplus_track_item_idx {
 };
 
 const static unsigned int oplus_chg_track_pattern[] = {
-	/*plugout*/
+	/*plugout - report all data items*/
 	[GAUGE_TRACK_CALI_FLAG_PLUGOUT] =
 		BIT(TRACK_PRE_VBAT)   | BIT(TRACK_CUR_VBAT)   | BIT(TRACK_PRE_TBAT)      | BIT(TRACK_CUR_TBAT) |
 		BIT(TRACK_PRE_CAR_C)  | BIT(TRACK_CUR_CAR_C)  | BIT(TRACK_PRE_TOTAL_CAR) | BIT(TRACK_CUR_TOTAL_CAR) |
 		BIT(TRACK_PRE_C_SOC)  | BIT(TRACK_CUR_C_SOC)  | BIT(TRACK_PRE_V_SOC)     | BIT(TRACK_CUR_V_SOC) |
-		BIT(TRACK_PRE_UI_SOC) | BIT(TRACK_CUR_UI_SOC) |	BIT(TRACK_CUR_QMAX)      | BIT(TRACK_CUR_QUSE) |
-		BIT(TRACK_CUR_AGING)  | BIT(TRACK_CUR_SHOW_AG),
+		BIT(TRACK_PRE_SOC)    | BIT(TRACK_CUR_SOC)    | BIT(TRACK_PRE_UI_SOC)    | BIT(TRACK_CUR_UI_SOC) |
+		BIT(TRACK_PRE_QMAX)   | BIT(TRACK_CUR_QMAX)   | BIT(TRACK_PRE_QUSE)      | BIT(TRACK_CUR_QUSE) |
+		BIT(TRACK_PRE_ZCV)    | BIT(TRACK_CUR_ZCV)    | BIT(TRACK_PRE_AGING)     | BIT(TRACK_CUR_AGING) |
+		BIT(TRACK_PRE_SHOW_AG)| BIT(TRACK_CUR_SHOW_AG)| BIT(TRACK_BATT_CC),
 
-	/*full*/
+	/*full - report all data items*/
 	[GAUGE_TRACK_CALI_FLAG_CHG_FULL] =
-		BIT(TRACK_CUR_VBAT)  | BIT(TRACK_CUR_TBAT) | BIT(TRACK_CUR_TOTAL_CAR) | BIT(TRACK_CUR_C_SOC) |
-		BIT(TRACK_CUR_V_SOC) | BIT(TRACK_CUR_SOC)  | BIT(TRACK_CUR_UI_SOC)    | BIT(TRACK_CUR_QMAX) |
-		BIT(TRACK_CUR_QUSE)  | BIT(TRACK_BATT_CC),
+		BIT(TRACK_PRE_VBAT)   | BIT(TRACK_CUR_VBAT)   | BIT(TRACK_PRE_TBAT)      | BIT(TRACK_CUR_TBAT) |
+		BIT(TRACK_PRE_CAR_C)  | BIT(TRACK_CUR_CAR_C)  | BIT(TRACK_PRE_TOTAL_CAR) | BIT(TRACK_CUR_TOTAL_CAR) |
+		BIT(TRACK_PRE_C_SOC)  | BIT(TRACK_CUR_C_SOC)  | BIT(TRACK_PRE_V_SOC)     | BIT(TRACK_CUR_V_SOC) |
+		BIT(TRACK_PRE_SOC)    | BIT(TRACK_CUR_SOC)    | BIT(TRACK_PRE_UI_SOC)    | BIT(TRACK_CUR_UI_SOC) |
+		BIT(TRACK_PRE_QMAX)   | BIT(TRACK_CUR_QMAX)   | BIT(TRACK_PRE_QUSE)      | BIT(TRACK_CUR_QUSE) |
+		BIT(TRACK_PRE_ZCV)    | BIT(TRACK_CUR_ZCV)    | BIT(TRACK_PRE_AGING)     | BIT(TRACK_CUR_AGING) |
+		BIT(TRACK_PRE_SHOW_AG)| BIT(TRACK_CUR_SHOW_AG)| BIT(TRACK_BATT_CC),
 
-	/*zcv*/
+	/*zcv - report all data items*/
 	[GAUGE_TRACK_CALI_FLAG_ZCV] =
-		BIT(TRACK_CUR_VBAT)      | BIT(TRACK_CUR_TBAT)      | BIT(TRACK_PRE_CAR_C) | BIT(TRACK_CUR_CAR_C) |
-		BIT(TRACK_PRE_TOTAL_CAR) | BIT(TRACK_CUR_TOTAL_CAR) | BIT(TRACK_PRE_C_SOC) | BIT(TRACK_CUR_C_SOC) |
-		BIT(TRACK_PRE_V_SOC)     | BIT(TRACK_CUR_V_SOC)     | BIT(TRACK_PRE_SOC)   | BIT(TRACK_CUR_SOC) |
-		BIT(TRACK_PRE_UI_SOC)    | BIT(TRACK_CUR_UI_SOC)    | BIT(TRACK_PRE_ZCV)   |BIT(TRACK_CUR_ZCV) |
-		BIT(TRACK_BATT_CC),
+		BIT(TRACK_PRE_VBAT)   | BIT(TRACK_CUR_VBAT)   | BIT(TRACK_PRE_TBAT)      | BIT(TRACK_CUR_TBAT) |
+		BIT(TRACK_PRE_CAR_C)  | BIT(TRACK_CUR_CAR_C)  | BIT(TRACK_PRE_TOTAL_CAR) | BIT(TRACK_CUR_TOTAL_CAR) |
+		BIT(TRACK_PRE_C_SOC)  | BIT(TRACK_CUR_C_SOC)  | BIT(TRACK_PRE_V_SOC)     | BIT(TRACK_CUR_V_SOC) |
+		BIT(TRACK_PRE_SOC)    | BIT(TRACK_CUR_SOC)    | BIT(TRACK_PRE_UI_SOC)    | BIT(TRACK_CUR_UI_SOC) |
+		BIT(TRACK_PRE_QMAX)   | BIT(TRACK_CUR_QMAX)   | BIT(TRACK_PRE_QUSE)      | BIT(TRACK_CUR_QUSE) |
+		BIT(TRACK_PRE_ZCV)    | BIT(TRACK_CUR_ZCV)    | BIT(TRACK_PRE_AGING)     | BIT(TRACK_CUR_AGING) |
+		BIT(TRACK_PRE_SHOW_AG)| BIT(TRACK_CUR_SHOW_AG)| BIT(TRACK_BATT_CC),
 
-	/*aging*/
+	/*aging - report all data items*/
 	[GAUGE_TRACK_CALI_FLAG_AGING] =
-		BIT(TRACK_CUR_VBAT) | BIT(TRACK_CUR_TBAT)    | BIT(TRACK_PRE_QMAX)  | BIT(TRACK_CUR_QMAX) |
-		BIT(TRACK_PRE_QUSE) | BIT(TRACK_CUR_QUSE)    | BIT(TRACK_PRE_AGING) | BIT(TRACK_CUR_AGING) |
-		BIT(TRACK_BATT_CC)  | BIT(TRACK_CUR_SHOW_AG) | BIT(TRACK_CUR_SHOW_AG)
+		BIT(TRACK_PRE_VBAT)   | BIT(TRACK_CUR_VBAT)   | BIT(TRACK_PRE_TBAT)      | BIT(TRACK_CUR_TBAT) |
+		BIT(TRACK_PRE_CAR_C)  | BIT(TRACK_CUR_CAR_C)  | BIT(TRACK_PRE_TOTAL_CAR) | BIT(TRACK_CUR_TOTAL_CAR) |
+		BIT(TRACK_PRE_C_SOC)  | BIT(TRACK_CUR_C_SOC)  | BIT(TRACK_PRE_V_SOC)     | BIT(TRACK_CUR_V_SOC) |
+		BIT(TRACK_PRE_SOC)    | BIT(TRACK_CUR_SOC)    | BIT(TRACK_PRE_UI_SOC)    | BIT(TRACK_CUR_UI_SOC) |
+		BIT(TRACK_PRE_QMAX)   | BIT(TRACK_CUR_QMAX)   | BIT(TRACK_PRE_QUSE)      | BIT(TRACK_CUR_QUSE) |
+		BIT(TRACK_PRE_ZCV)    | BIT(TRACK_CUR_ZCV)    | BIT(TRACK_PRE_AGING)     | BIT(TRACK_CUR_AGING) |
+		BIT(TRACK_PRE_SHOW_AG)| BIT(TRACK_CUR_SHOW_AG)| BIT(TRACK_BATT_CC)
 };
 
 static int oplus_mt6375_cali_info_item_to_val(struct gauge_track_cali_info_s *info,
@@ -1474,7 +1486,12 @@ static int mt6375_guage_driver_probe(struct platform_device *pdev)
 	int ic_index;
 	struct oplus_chg_ic_cfg ic_cfg = { 0 };
 	int rc = 0;
-	struct device_node *node = NULL;
+	struct device_node *node = oplus_get_node_by_child_gauge(pdev->dev.of_node);
+
+	if (node && of_property_read_bool(node, "skip_gauge_probe")) {
+		dev_err(&pdev->dev, "non-external gauge, skip pmic gauge driver probe\n");
+		return -ENODEV;
+	}
 
 	chip = devm_kzalloc(&pdev->dev, sizeof(*chip), GFP_KERNEL);
 	if (!chip) {
@@ -1519,15 +1536,12 @@ static int mt6375_guage_driver_probe(struct platform_device *pdev)
 	chip->protect_check_done = true;
 
 	atomic_set(&chip->locked, 0);
-	node = oplus_get_node_by_child_gauge(chip->dev->of_node);
-	rc = of_property_read_u32(node, "oplus,ic_type",
-				  &ic_type);
+	rc = of_property_read_u32(chip->dev->of_node, "oplus,ic_type", &ic_type);
 	if (rc < 0) {
 		chg_err("can't get ic type, rc=%d\n", rc);
 		goto error;
 	}
-	rc = of_property_read_u32(node, "oplus,ic_index",
-				  &ic_index);
+	rc = of_property_read_u32(chip->dev->of_node, "oplus,ic_index", &ic_index);
 	if (rc < 0) {
 		chg_err("can't get ic index, rc=%d\n", rc);
 		goto error;

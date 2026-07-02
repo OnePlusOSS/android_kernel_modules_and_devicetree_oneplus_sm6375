@@ -286,6 +286,13 @@ struct oplus_comm_config {
 	bool support_boost_ic;
 } __attribute__ ((packed));
 
+struct uv_dec_speed_entry {
+	s32 temp;
+	u32 speed;
+};
+
+#define UV_DEC_SPEED_ENTRY_U32_CNT	(sizeof(struct uv_dec_speed_entry) / sizeof(u32))
+
 struct ui_soc_decimal {
 	int ui_soc_decimal;
 	int ui_soc_integer;
@@ -357,6 +364,8 @@ struct oplus_chg_comm {
 
 	struct oplus_comm_spec_config spec;
 	struct oplus_comm_config config;
+	int uv_dec_speed_tbl_cnt;
+	struct uv_dec_speed_entry *uv_dec_speed_tbl;
 	struct ui_soc_decimal soc_decimal;
 	struct reserve_soc_data rsd;
 
@@ -576,6 +585,7 @@ struct oplus_chg_comm {
 	int flash_mode;
 	struct delayed_work flash_mode_boost_work;
 	struct delayed_work offline_clean_work;
+	const int (*ui_soc_smooth_table)[RESERVE_SOC_MAX];
 };
 
 typedef struct {
@@ -3315,7 +3325,7 @@ reserve_soc_error:
 	oplus_comm_set_smooth_soc(chip, chip->soc);
 }
 
-static const int soc_jump_table[RESERVE_SOC_MAX + 1][RESERVE_SOC_MAX] = {
+static const int ui_soc_smooth_table[RESERVE_SOC_MAX + 1][RESERVE_SOC_MAX] = {
 	{ -1, -1, -1, -1, -1 }, /* reserve 0 */
 	{ 55, -1, -1, -1, -1 }, /* reserve 1 */
 	{ 36, 71, -1, -1, -1 }, /* reserve 2 */
@@ -3359,12 +3369,12 @@ static void oplus_comm_smooth_to_soc(struct oplus_chg_comm *chip, bool force)
 	}
 
 	for (i = reserve_soc - 1; i >= 0; i--) {
-		if (soc_jump_table[reserve_soc][i] < 0) {
-			chg_err("soc_jump_table invalid, please check it.\n");
+		if (chip->ui_soc_smooth_table[reserve_soc][i] < 0) {
+			chg_err("ui_soc_smooth_table invalid, please check it.\n");
 			goto reserve_soc_error;
 		}
 
-		if (soc >= soc_jump_table[reserve_soc][i]) {
+		if (soc >= chip->ui_soc_smooth_table[reserve_soc][i]) {
 			temp_soc = soc + i + 1;
 			break;
 		}
@@ -3379,9 +3389,9 @@ static void oplus_comm_smooth_to_soc(struct oplus_chg_comm *chip, bool force)
 			chip->rsd.smooth_soc_avg_cnt = SMOOTH_SOC_MIN_FIFO_LEN;
 
 		for (i = 0; i < reserve_soc; i++) {
-			if (soc >= (soc_jump_table[reserve_soc][i] - SOC_JUMP_RANGE_VAL) &&
-			    soc <= (soc_jump_table[reserve_soc][i] + SOC_JUMP_RANGE_VAL)) {
-				chg_debug("soc:%d index:%d soc_jump:%d\n", soc, i, soc_jump_table[reserve_soc][i]);
+			if (soc >= (chip->ui_soc_smooth_table[reserve_soc][i] - SOC_JUMP_RANGE_VAL) &&
+			    soc <= (chip->ui_soc_smooth_table[reserve_soc][i] + SOC_JUMP_RANGE_VAL)) {
+				chg_debug("soc:%d index:%d soc_jump:%d\n", soc, i, chip->ui_soc_smooth_table[reserve_soc][i]);
 				chip->rsd.is_soc_jump_range = true;
 				chip->rsd.smooth_soc_avg_cnt = SMOOTH_SOC_MAX_FIFO_LEN;
 				break;
@@ -3434,6 +3444,71 @@ reserve_soc_error:
 #define TIMES_OF_LOW_BATT_CONTROL_ENABLE	(DELAY_OF_LOW_BATT_CONTROL_ENABLE / DELAY_OF_ONCE_LOW_BATT_CONTROL)
 #define SEC_OF_ONE_HOUR		(3600)
 #define UI_SOC_LOW_LIMIT		(3)
+
+static void oplus_comm_parse_uv_dec_speed_tbl(struct oplus_chg_comm *comm_dev,
+						    struct device_node *node)
+{
+	const char *prop = "oplus_spec,uv_dec_speed_tbl";
+	int elems, rc, i;
+
+	elems = of_property_count_elems_of_size(node, prop, sizeof(u32));
+	if (elems <= 0 || (elems % UV_DEC_SPEED_ENTRY_U32_CNT)) {
+		chg_err("%s invalid elems=%d\n", prop, elems);
+		return;
+	}
+
+	comm_dev->uv_dec_speed_tbl_cnt = elems / UV_DEC_SPEED_ENTRY_U32_CNT;
+	comm_dev->uv_dec_speed_tbl = devm_kcalloc(comm_dev->dev, comm_dev->uv_dec_speed_tbl_cnt,
+						  sizeof(*comm_dev->uv_dec_speed_tbl), GFP_KERNEL);
+	if (!comm_dev->uv_dec_speed_tbl) {
+		chg_err("alloc uv_dec_speed_tbl fail, cnt=%d\n", comm_dev->uv_dec_speed_tbl_cnt);
+		comm_dev->uv_dec_speed_tbl_cnt = 0;
+		return;
+	}
+
+	rc = of_property_read_u32_array(node, prop, (u32 *)comm_dev->uv_dec_speed_tbl, elems);
+	if (rc < 0) {
+		chg_err("read %s fail, rc=%d\n", prop, rc);
+		goto out_free;
+	}
+
+	for (i = 0; i < comm_dev->uv_dec_speed_tbl_cnt; i++) {
+		if (comm_dev->uv_dec_speed_tbl[i].speed <= 0) {
+			chg_err("invalid speed, i=%d speed=%u\n",
+				i, comm_dev->uv_dec_speed_tbl[i].speed);
+			goto out_free;
+		}
+		if (i > 0 && comm_dev->uv_dec_speed_tbl[i].temp <= comm_dev->uv_dec_speed_tbl[i - 1].temp) {
+			chg_err("temp not increasing, i=%d temp=%d prev_temp=%d\n",
+				i, comm_dev->uv_dec_speed_tbl[i].temp,
+				comm_dev->uv_dec_speed_tbl[i - 1].temp);
+			goto out_free;
+		}
+	}
+
+	return;
+
+out_free:
+	devm_kfree(comm_dev->dev, comm_dev->uv_dec_speed_tbl);
+	comm_dev->uv_dec_speed_tbl = NULL;
+	comm_dev->uv_dec_speed_tbl_cnt = 0;
+}
+
+static unsigned int oplus_comm_get_uv_dec_speed(struct oplus_chg_comm *chip)
+{
+	int i;
+
+	if (!chip->uv_dec_speed_tbl || chip->uv_dec_speed_tbl_cnt <= 0)
+		return UI_SOC_DEC_SPEED_OF_UV_BATT;
+
+	for (i = 0; i < chip->uv_dec_speed_tbl_cnt - 1; i++) {
+		if (chip->shell_temp < chip->uv_dec_speed_tbl[i].temp)
+			return chip->uv_dec_speed_tbl[i].speed;
+	}
+
+	return chip->uv_dec_speed_tbl[chip->uv_dec_speed_tbl_cnt - 1].speed;
+}
+
 static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm *chip, unsigned long soc_down_jiffies,
 	int vbat_min, bool *p_force_down_1)
 {
@@ -3529,8 +3604,7 @@ static unsigned long oplus_comm_ui_soc_low_battery_control(struct oplus_chg_comm
 					    t_soc_x_to_1, *p_force_down_1, back_rm, load_current);
 				}
 
-				if (t_soc_x_to_1 < UI_SOC_DEC_SPEED_OF_UV_BATT)
-					t_soc_x_to_1 = UI_SOC_DEC_SPEED_OF_UV_BATT;
+				t_soc_x_to_1 = max(t_soc_x_to_1, oplus_comm_get_uv_dec_speed(chip));
 				soc_down_jiffies = chip->soc_down_update_jiffies + (unsigned long)(t_soc_x_to_1 * HZ);
 			}
 		} else {
@@ -3587,6 +3661,116 @@ static void oplus_comm_gauge_r_info_check(struct oplus_chg_comm *chip)
 	pre_soc = chip->soc;
 }
 
+/**
+ * oplus_comm_get_time_diff_for_current_calc - Get time difference for current calculation
+ * @chip: oplus_chg_comm pointer
+ * @time_diff_sec: output parameter for time difference in seconds
+ * @now_tm_sec: output parameter for current time in seconds
+ *
+ * Returns 0 on success, negative error code on failure.
+ * On success, also updates chip->passed_q_save_time for next use.
+ */
+static int oplus_comm_get_time_diff_for_current_calc(struct oplus_chg_comm *chip,
+						      unsigned long *time_diff_sec,
+						      unsigned long *now_tm_sec)
+{
+	int rc;
+
+	if (chip == NULL || time_diff_sec == NULL || now_tm_sec == NULL)
+		return -EINVAL;
+
+	/* Get current real time */
+	rc = oplus_comm_get_current_time(now_tm_sec);
+	if (rc < 0 || chip->passed_q_save_time == 0) {
+		/* If get time failed or save_time is not set, use default time */
+		*time_diff_sec = UV_ADJUSTED_CHECK_TIME;
+		chg_info("use default time %lu sec for current calculation\n", *time_diff_sec);
+	} else {
+		/* Calculate actual time difference */
+		if (*now_tm_sec > chip->passed_q_save_time) {
+			*time_diff_sec = *now_tm_sec - chip->passed_q_save_time;
+		} else {
+			/* Time went backwards or invalid, use default */
+			*time_diff_sec = UV_ADJUSTED_CHECK_TIME;
+			chg_info("invalid time diff, use default time %lu sec\n", *time_diff_sec);
+		}
+		if (*time_diff_sec < 1)
+			*time_diff_sec = 1;
+	}
+
+	/* Update passed_q_save_time after calculation for next use */
+	if (rc >= 0)
+		chip->passed_q_save_time = *now_tm_sec;
+
+	return 0;
+}
+
+/**
+ * oplus_comm_calc_vbat_uv_by_current - Calculate and adjust vbat_uv_thr_mv based on current
+ * @chip: oplus_chg_comm pointer
+ * @base_vbat_uv_thr_mv: base vbat uv threshold in mV
+ * @vbat_uv_thr_mv_adjusted: output parameter for adjusted vbat uv threshold in mV
+ * @current_avg: output parameter for average current in mA
+ *
+ * This function calculates average current and adjusts vbat_uv_thr_mv accordingly
+ * when support_boost_ic is enabled and SOC < 20%.
+ * If conditions are not met, vbat_uv_thr_mv_adjusted will be set to base_vbat_uv_thr_mv.
+ */
+static void oplus_comm_calc_vbat_uv_by_current(struct oplus_chg_comm *chip,
+						int base_vbat_uv_thr_mv,
+						int *vbat_uv_thr_mv_adjusted,
+						int *current_avg)
+{
+	unsigned long now_tm_sec = 0;
+	unsigned long time_diff_sec = 0;
+
+	if (chip == NULL || vbat_uv_thr_mv_adjusted == NULL || current_avg == NULL) {
+		if (vbat_uv_thr_mv_adjusted)
+			*vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv;
+		if (current_avg)
+			*current_avg = 0;
+		return;
+	}
+
+	/* Initialize with base value */
+	*vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv;
+	*current_avg = 0;
+
+
+	/* Get time difference for current calculation */
+	oplus_comm_get_time_diff_for_current_calc(chip, &time_diff_sec, &now_tm_sec);
+
+	/* Adjust vbat_uv_thr_mv based on average current when SOC < 20% */
+	if (chip->config.support_boost_ic &&
+	    chip->soc < UV_ADJUSTED_CHECK_SOC) {
+
+		/* Calculate average current using real time difference */
+		/* current_avg = (passed_q - passed_q_last) * 3600 / time_diff_sec */
+		/* passed_q is in mAh, so (passed_q - passed_q_last) is mAh change */
+		/* Multiply by 3600 to convert mAh to mAs, then divide by seconds to get mA */
+		if (time_diff_sec > 0)
+			*current_avg = -(chip->passed_q - chip->passed_q_last) * 3600 / (int)time_diff_sec;
+		else
+			*current_avg = -1;
+
+		chg_info("SOC %d < 20%%, current_avg=%dmA, passed_q=%d, passed_q_last=%d, time_diff=%lu sec\n",
+				chip->soc, *current_avg, chip->passed_q, chip->passed_q_last, time_diff_sec);
+		if (*current_avg < 0) {
+			*vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv;
+			chg_info("charging, no adjust vbat_uv_thr_mv: %d -> %d\n",
+				base_vbat_uv_thr_mv, *vbat_uv_thr_mv_adjusted);
+		} else if (*current_avg < UV_ADJUSTED_LOW_THR) {
+			*vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv + UV_ADJUSTED_VOLT_THR;
+			chg_info("current_avg < 400, adjust vbat_uv_thr_mv: %d -> %d\n",
+				base_vbat_uv_thr_mv, *vbat_uv_thr_mv_adjusted);
+		} else if (*current_avg > UV_ADJUSTED_HIGH_THR) {
+			*vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv - UV_ADJUSTED_VOLT_THR;
+			chg_info("current_avg > 1000, adjust vbat_uv_thr_mv: %d -> %d\n",
+				base_vbat_uv_thr_mv, *vbat_uv_thr_mv_adjusted);
+		}
+	}
+}
+
 static void oplus_comm_adjust_vbat_uv_by_current(struct oplus_chg_comm *chip,
 						  int base_vbat_uv_thr_mv)
 {
@@ -3594,30 +3778,9 @@ static void oplus_comm_adjust_vbat_uv_by_current(struct oplus_chg_comm *chip,
 	int vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv;
 	int current_avg = 0;
 
-	/* Adjust vbat_uv_thr_mv based on average current when SOC < 20% */
-	if (chip->config.support_boost_ic &&
-	    chip->soc < UV_ADJUSTED_CHECK_SOC) {
-		/* Check if at least 1 minute has passed since last save */
-			/* Calculate average current: current_avg = (passed_q - passed_q_last) * 60 */
-			/* passed_q is in mAh, so (passed_q - passed_q_last) is mAh change in 1 minute */
-			/* Multiply by 60 to get mA (mAh/min * 60 = mA) */
-		current_avg = -(chip->passed_q - chip->passed_q_last) * UV_ADJUSTED_CHECK_TIME;
-		chg_info("SOC %d < 20%%, current_avg=%dmA, passed_q=%d, passed_q_last=%d\n",
-				chip->soc, current_avg, chip->passed_q, chip->passed_q_last);
-		if (current_avg < 0) {
-			vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv;
-				chg_info("charging, no adjust vbat_uv_thr_mv: %d -> %d\n",
-				base_vbat_uv_thr_mv, vbat_uv_thr_mv_adjusted);
-		} else if (current_avg < UV_ADJUSTED_LOW_THR) {
-			vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv + UV_ADJUSTED_VOLT_THR;
-			chg_info("current_avg < 400, adjust vbat_uv_thr_mv: %d -> %d\n",
-				base_vbat_uv_thr_mv, vbat_uv_thr_mv_adjusted);
-		} else if (current_avg > UV_ADJUSTED_HIGH_THR) {
-			vbat_uv_thr_mv_adjusted = base_vbat_uv_thr_mv - UV_ADJUSTED_VOLT_THR;
-			chg_info("current_avg > 1000, adjust vbat_uv_thr_mv: %d -> %d\n",
-				base_vbat_uv_thr_mv, vbat_uv_thr_mv_adjusted);
-		}
-	}
+	/* Calculate and adjust vbat_uv_thr_mv based on current */
+	oplus_comm_calc_vbat_uv_by_current(chip, base_vbat_uv_thr_mv,
+					  &vbat_uv_thr_mv_adjusted, &current_avg);
 
 	if (vbat_uv_thr_mv_adjusted != base_vbat_uv_thr_mv) {
 		spec->vbat_uv_thr_mv = vbat_uv_thr_mv_adjusted;
@@ -3720,8 +3883,8 @@ static void oplus_comm_passed_q_save_work(struct work_struct *work)
 	}
 
 	chip->passed_q = passed_q_total;
-	chg_info("save passed_q: %d, passed_q_last: %d\n",
-		 chip->passed_q, chip->passed_q_last);
+	chg_info("save passed_q: %d, passed_q_last: %d, save_time: %lu\n",
+		 chip->passed_q, chip->passed_q_last, chip->passed_q_save_time);
 
 	/* Update vbat_uv_thr_mv based on current if needed */
 	rc = oplus_mms_get_item_data(chip->gauge_topic, GAUGE_ITEM_VBAT_UV,
@@ -4033,7 +4196,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 				    charging, vbat_min, chip->vbat_mv,
 				    force_dec_interval, config->chg_shutdown_max_mv, chip->ui_soc);
 				soc_down_jiffies = chip->soc_down_update_jiffies +
-						   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
+						   (unsigned long)(oplus_comm_get_uv_dec_speed(chip) * HZ);
 				force_down_2 = true;
 			} else {
 				force_down_2 = false;
@@ -4045,7 +4208,7 @@ static void oplus_comm_ui_soc_update(struct oplus_chg_comm *chip)
 		/* Force ui_soc to drop to 0 when the voltage is too low */
 		if (time_is_before_jiffies(vbat_uv_jiffies)) {
 			soc_down_jiffies = chip->soc_down_update_jiffies +
-					   (unsigned long)(UI_SOC_DEC_SPEED_OF_UV_BATT * HZ);
+					   (unsigned long)(oplus_comm_get_uv_dec_speed(chip) * HZ);
 			force_down_2 = true;
 		} else {
 			force_down_2 = false;
@@ -4173,7 +4336,7 @@ done:
 
 	//When the voltage is greater than soc 3% and the ui_soc is less than or equal to 3%, maintain 3% ui_soc.
 	if (chip->deep_support && chip->config.ui_soc_3_voltage_comp_mv != INT_MAX &&
-	    is_gauge_term_voltage_votable_available(chip) && chip->config.support_boost_ic) {
+	    is_gauge_term_voltage_votable_available(chip)) {
 		for (dex = 0; dex < LOW_VOLT_UISOC_LADDER_NUMBER - 1; dex++) {
 			if (chip->config.temp_ladder_of_keep_soc_3[dex] == 0 ||
 			    chip->config.support_uisoc_low_battery_control == false)
@@ -4912,16 +5075,6 @@ int oplus_comm_switch_ffc(struct oplus_mms *topic)
 	oplus_comm_ffc_temp_thr_init(chip, ffc_temp_region);
 
 	oplus_comm_set_ffc_step(chip, 0);
-	if (ffc_temp_region < FFC_TEMP_REGION_PRE_NORMAL || ffc_temp_region > FFC_TEMP_REGION_NORMAL) {
-		chg_err("FFC charging is not possible in this temp region, temp_region=%s\n",
-			oplus_comm_get_ffc_temp_region_str(ffc_temp_region));
-		if (is_wired_charging_disable_votable_available(chip)) {
-			vote(chip->wired_charging_disable_votable,
-			     FASTCHG_VOTER, false, 0, false);
-		}
-		rc = -EINVAL;
-		goto err;
-	}
 	if (!chip->wired_online && !chip->wls_online) {
 		chg_err("wired and wireless charge is offline\n");
 		if (is_wired_charging_disable_votable_available(chip)) {
@@ -6347,6 +6500,7 @@ static void oplus_comm_subscribe_gauge_topic(struct oplus_mms *topic,
 	struct mms_msg *msg;
 	int rc;
 	int shutdown_soc;
+	unsigned long now_tm_sec = 0;
 
 	chip->gauge_subs =
 		oplus_mms_subscribe(topic, chip,
@@ -6426,9 +6580,18 @@ static void oplus_comm_subscribe_gauge_topic(struct oplus_mms *topic,
 
 	/* Initialize passed_q save work if enabled */
 	if (chip->config.support_boost_ic) {
-		chip->passed_q = 0;
+		rc = oplus_gauge_get_car_c(chip->gauge_topic, 0, &chip->passed_q);
+		if (rc < 0)
+			rc = oplus_gauge_get_dod0_passed_q(chip->gauge_topic, 0, &chip->passed_q);
 		chip->passed_q_last = 0;
 		chip->passed_q_save_time = jiffies;
+		rc = oplus_comm_get_current_time(&now_tm_sec);
+		if (rc < 0) {
+			chg_err("get current time failed for passed_q_save_time init, rc=%d\n", rc);
+			chip->passed_q_save_time = 0;
+		} else {
+			chip->passed_q_save_time = now_tm_sec;
+		}
 		schedule_delayed_work(&chip->passed_q_save_work, msecs_to_jiffies(UV_ADJUSTED_CHECK_TIME * 1000));
 		chg_info("passed_q tracking initialized for vbat_uv_curr_adjust\n");
 	}
@@ -7470,6 +7633,25 @@ static int oplus_comm_update_chg_sub_batt_full(struct oplus_mms *mms,
 	return 0;
 }
 
+static int oplus_comm_update_batt_cv_full(struct oplus_mms *mms,
+				       union mms_msg_data *data)
+{
+	struct oplus_chg_comm *chip;
+
+	if (mms == NULL) {
+		chg_err("mms is NULL");
+		return -EINVAL;
+	}
+	if (data == NULL) {
+		chg_err("data is NULL");
+		return -EINVAL;
+	}
+	chip = oplus_mms_get_drvdata(mms);
+
+	data->intval = chip->batt_cv_full;
+
+	return 0;
+}
 
 static int oplus_comm_update_ffc_status(struct oplus_mms *mms,
 				       union mms_msg_data *data)
@@ -8067,7 +8249,6 @@ static int oplus_comm_wired_update_flash_mode(struct oplus_mms *mms, union mms_m
 
 	return 0;
 }
-
 static struct mms_item oplus_comm_item[] = {
 	{
 		.desc = {
@@ -8724,21 +8905,72 @@ static bool oplus_comm_parse_from_cmdline(struct oplus_chg_comm *chip)
 	return false;
 }
 
+static void oplus_comm_parse_ui_soc_smooth_table_dt(struct oplus_chg_comm *chip, struct device_node *node)
+{
+	int rc = 0;
+	int i = 0, j = 0, len = 0;
+	int (*dynamic_table)[RESERVE_SOC_MAX];
+	int expected_len = (RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX;
+	u32 tmp_table[(RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX];
+
+	if (!node) {
+		chg_err("Invalid parameters passed\n");
+		return;
+	}
+
+	len = of_property_count_u32_elems(node, "oplus,ui_soc_smooth_table");
+	if (len > 0) {
+		if (len != expected_len) {
+			chg_err("ui_soc_smooth_table length invalid: len=%d (expected %d), use default\n", len, expected_len);
+			return;
+		}
+
+		rc = of_property_read_u32_array(node, "oplus,ui_soc_smooth_table", tmp_table,
+				(RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX);
+		if (rc < 0) {
+			chg_err("get oplus,ui_soc_smooth_table, use default\n");
+			return;
+		}
+
+		dynamic_table = devm_kzalloc(chip->dev,
+					sizeof(int) * (RESERVE_SOC_MAX + 1) * RESERVE_SOC_MAX, GFP_KERNEL);
+		if (dynamic_table) {
+			for (i = 0; i < RESERVE_SOC_MAX + 1; i++) {
+				for (j = 0; j < RESERVE_SOC_MAX; j++) {
+					dynamic_table[i][j] = (int)tmp_table[i * RESERVE_SOC_MAX + j];
+				}
+			}
+			chip->ui_soc_smooth_table = dynamic_table;
+			chg_info("use dts ui_soc_smooth_table, elements=%d\n", len);
+		} else {
+			chg_err("alloc ui_soc_smooth_table failed, use default\n");
+		}
+	} else {
+		chg_info("no dts ui_soc_smooth_table, use default\n");
+		return;
+	}
+}
+
 static void oplus_comm_parse_smooth_soc_dt(struct oplus_chg_comm *chip)
 {
 	struct device_node *node = oplus_get_node_by_type(chip->dev->of_node);
 	struct oplus_comm_config *config = &chip->config;
 	int rc;
 
+	chip->ui_soc_smooth_table = ui_soc_smooth_table;
+
 	if (oplus_comm_reserve_soc_by_rus(chip)) {
 		config->smooth_switch = true;
 		config->reserve_soc = chip->rsd.rus_reserve_soc;
+		oplus_comm_parse_ui_soc_smooth_table_dt(chip, node);
 	} else {
 		config->smooth_switch = of_property_read_bool(node, "oplus,smooth_switch");
 		if (config->smooth_switch) {
 			rc = of_property_read_u32(node, "oplus,reserve_chg_soc", &config->reserve_soc);
 			if (rc)
 				config->reserve_soc = RESERVE_SOC_DEFAULT;
+
+			oplus_comm_parse_ui_soc_smooth_table_dt(chip, node);
 		}
 		chg_info("read from dts %d %d\n", config->smooth_switch, config->reserve_soc);
 	}
@@ -9397,6 +9629,8 @@ static int oplus_comm_parse_dt(struct oplus_chg_comm *comm_dev)
 
 	config->vooc_dis_show_ui_power =
 		of_property_read_bool(node, "oplus,vooc_dis_show_ui_power");
+
+	oplus_comm_parse_uv_dec_speed_tbl(comm_dev, node);
 
 	rc = read_signed_data_from_node(node, "oplus_spec,drop_soc_2_temp_ladder",
 					  (u32 *)&config->temp_ladder_of_drop_soc_2, LOW_VOLT_UISOC_LADDER_NUMBER);

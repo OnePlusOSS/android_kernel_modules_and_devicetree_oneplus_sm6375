@@ -333,6 +333,12 @@ config OPLUS_SY6974B_CHARGER
 	help
 	  Say Y here to declare SY6974B support
 
+config OPLUS_GAUGE_BQ28Z610_RA
+	bool "GAUGE BQ28Z610 RA support"
+	default n
+	help
+	  Say Y here to declare BQ28Z610 RA support
+
 config OPLUS_GAUGE_MPC7022
 	bool "GAUGE MPC7022 support"
 	default n

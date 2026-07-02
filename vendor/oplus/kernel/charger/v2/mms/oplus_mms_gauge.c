@@ -63,6 +63,7 @@ static struct oplus_mms_gauge *g_mms_gauge;
 static void oplus_mms_gauge_get_reserve_calib_info(struct oplus_mms_gauge *chip);
 static int oplus_mms_gauge_push_auth(struct oplus_mms_gauge *chip);
 static int oplus_mms_gauge_push_hmac(struct oplus_mms_gauge *chip);
+static int oplus_mms_gauge_choice_fit_vol(struct oplus_mms_gauge *chip, int gauge_vol);
 
 static int gauge_dbg_tbat = 0;
 module_param(gauge_dbg_tbat, int, 0644);
@@ -527,6 +528,11 @@ static void oplus_mms_gauge_read_mode_set(struct oplus_mms *mms, bool mode)
 	}
 }
 
+#define TEMP_THR_34_DEGREE 340  /* 34 degrees in tenths */
+#define TEMP_THR_27_DEGREE 270  /* 27 degrees in tenths */
+#define CURR_THR_3A 3000        /* 3A in mA */
+#define MAX_COMPENSATE_2_DEGREE 20  /* 2 degrees in tenths */
+
 static bool oplus_need_compensate_temp_check(struct oplus_mms_gauge *chip,
 					    int main_temp, unsigned long gauge_index)
 {
@@ -546,7 +552,25 @@ static bool oplus_need_compensate_temp_check(struct oplus_mms_gauge *chip,
 	if (main_temp == GAUGE_INVALID_TEMP)
 		return false;
 
+	/* Battery temperature < 27 degrees, no compensation */
+	if (main_temp < TEMP_THR_27_DEGREE) {
+		chg_debug("main_temp %d < 27 degree, no compensation\n", main_temp);
+		return false;
+	}
+
 	return true;
+}
+
+static int oplus_gauge_temp_compensate_limit(int main_temp, int compensate_thr)
+{
+	/* 27 <= main_temp < 34 degrees: maximum compensation 2 degrees */
+	if (main_temp < TEMP_THR_34_DEGREE && compensate_thr > MAX_COMPENSATE_2_DEGREE) {
+		compensate_thr = MAX_COMPENSATE_2_DEGREE;
+		chg_debug("main_temp %d in [27,34), compensate_thr %d (max 2 degree)\n",
+			  main_temp, compensate_thr);
+	}
+
+	return compensate_thr;
 }
 
 static int oplus_gauge_get_compensate_batt_thr(struct oplus_mms_gauge *chip,
@@ -590,8 +614,9 @@ static int oplus_gauge_get_compensate_batt_thr(struct oplus_mms_gauge *chip,
 
 	compensate_thr = chip->oplus_mainbat_temp_thr[i];
 
-	chg_debug("compensate_thr %d i %d \n", compensate_thr, i);
+	compensate_thr = oplus_gauge_temp_compensate_limit(main_temp, compensate_thr);
 
+	chg_debug("compensate_thr %d i %d \n", compensate_thr, i);
 	return compensate_thr;
 }
 
@@ -1991,6 +2016,7 @@ int oplus_gauge_get_volt(struct oplus_mms *mms, int index, int *val)
 {
 	struct oplus_mms_gauge *chip;
 	int rc;
+	int fit_vol;
 
 	if ((val == NULL) || (mms == NULL))
 		return 0;
@@ -2026,6 +2052,13 @@ int oplus_gauge_get_volt(struct oplus_mms *mms, int index, int *val)
 			chg_err("get volt error, rc=%d\n", rc);
 			return rc;
 		}
+	}
+
+	/* For platform gauge, choose fit voltage from CP IC; HAL ignores index and returns same voltage */
+	if (oplus_get_gauge_type() == GAUGE_TYPE_PLATFORM) {
+		fit_vol = oplus_mms_gauge_choice_fit_vol(chip, *val);
+		if (fit_vol > 0)
+			*val = fit_vol;
 	}
 
 	return 0;
@@ -5508,6 +5541,37 @@ static void oplus_mms_gauge_set_fast_sampling_work(struct work_struct *work)
 		!!wired_data.intval, !!wls_data.intval);
 }
 
+static int gauge_ffc_ra_soc_data = 0;
+module_param(gauge_ffc_ra_soc_data, int, 0644);
+MODULE_PARM_DESC(gauge_ffc_ra_soc_data, "gauge ffc ra soc data flag");
+#define FCC_RA_UI_SOC_MAX		30
+#define FCC_RA_UI_SOC_PERCENT		10
+#define FFC_CHECK_BATT_RA0_DELAY	2500
+#define FFC_CHECK_BATT_T_RA_DELAY	3500
+static void oplus_gauge_fcc_ra_ui_soc_check(struct oplus_mms_gauge *chip)
+{
+	if (!chip)
+		return;
+
+	if (gauge_ffc_ra_soc_data > 0 || (!chip->wired_online && !chip->wls_online && chip->ui_soc > 0 &&
+		chip->ui_soc <= FCC_RA_UI_SOC_MAX && !(chip->ui_soc % FCC_RA_UI_SOC_PERCENT)))
+		schedule_delayed_work(&chip->gauge_fcc_vdelta_work, 0);
+
+	gauge_ffc_ra_soc_data = 0;
+}
+
+static void oplus_mms_gauge_schedule_fcc_ra_work(struct oplus_mms_gauge *chip,
+	unsigned int ra0_delay_ms, unsigned int t_ra_delay_ms)
+{
+	if (!chip || !chip->wired_online)
+		return;
+
+	chip->fcc_ra_cv = true;
+	schedule_delayed_work(&chip->gauge_fcc_vdelta_work, 0);
+	schedule_delayed_work(&chip->gauge_fcc_ra0_work, msecs_to_jiffies(ra0_delay_ms));
+	schedule_delayed_work(&chip->gauge_fcc_t_ra_work, msecs_to_jiffies(t_ra_delay_ms));
+}
+
 static void oplus_mms_gauge_comm_subs_callback(struct mms_subscribe *subs,
 					       enum mms_msg_type type, u32 id, bool sync)
 {
@@ -5526,10 +5590,18 @@ static void oplus_mms_gauge_comm_subs_callback(struct mms_subscribe *subs,
 		case COMM_ITEM_CHG_FULL:
 			schedule_work(&chip->set_gauge_batt_full_work);
 			break;
+		case COMM_ITEM_BATT_CV_FULL:
+			oplus_mms_get_item_data(chip->comm_topic, id, &data, false);
+			if (!!data.intval && !chip->check_imp_model_done)
+				schedule_delayed_work(&chip->check_imp_model_work, 0);
+			if (!!data.intval)
+				oplus_mms_gauge_schedule_fcc_ra_work(chip, 0, 0);
+			break;
 		case COMM_ITEM_UI_SOC:
 			oplus_mms_get_item_data(chip->comm_topic, id, &data,
 						false);
 			chip->ui_soc = data.intval;
+			oplus_gauge_fcc_ra_ui_soc_check(chip);
 			break;
 		case COMM_ITEM_SUPER_ENDURANCE_STATUS:
 			oplus_mms_get_item_data(chip->comm_topic, id, &data, false);
@@ -5542,6 +5614,15 @@ static void oplus_mms_gauge_comm_subs_callback(struct mms_subscribe *subs,
 			break;
 		case COMM_ITEM_BOOT_COMPLETED:
 			oplus_mms_gauge_get_reserve_calib_info(chip);
+			break;
+		case COMM_ITEM_FFC_STATUS:
+			oplus_mms_get_item_data(chip->comm_topic, id, &data, false);
+			if (data.intval == FFC_WAIT && !chip->check_imp_model_done)
+				schedule_delayed_work(&chip->check_imp_model_work,
+					msecs_to_jiffies(FFC_CHECK_BATT_IMP_DELAY));
+			if (data.intval == FFC_WAIT)
+				oplus_mms_gauge_schedule_fcc_ra_work(
+					chip, FFC_CHECK_BATT_RA0_DELAY, FFC_CHECK_BATT_T_RA_DELAY);
 			break;
 		default:
 			break;
@@ -5694,6 +5775,13 @@ static void oplus_mms_gauge_wired_subs_callback(struct mms_subscribe *subs,
 			chip->wired_online = data.intval;
 			schedule_work(&chip->update_change_work);
 			oplus_gauge_deep_dischg_check(chip);
+			if (!chip->wired_online) {
+				chip->check_imp_model_done = false;
+				cancel_delayed_work(&chip->check_imp_model_work);
+				chip->fcc_ra_cv = false;
+				cancel_delayed_work(&chip->gauge_fcc_ra0_work);
+				cancel_delayed_work(&chip->gauge_fcc_t_ra_work);
+			}
 			break;
 		case WIRED_ITEM_CHG_TYPE:
 			if (chip->wired_online && is_voocphy_ic_available(chip))
@@ -6428,6 +6516,172 @@ static void oplus_mms_gauge_get_reserve_calib_info_work(
 	}
 }
 
+static int oplus_mms_gauge_vdelta_check(struct oplus_mms *mms, bool ra_cv)
+{
+	int rc = 0;
+	int i;
+	struct oplus_chg_ic_dev *ic;
+	struct oplus_mms_gauge *chip;
+
+	if (mms == NULL) {
+		chg_err("mms is NULL");
+		return -EINVAL;
+	}
+
+	chip = oplus_mms_get_drvdata(mms);
+	if (!chip)
+		return -ENOTSUPP;
+
+	if (mms == chip->gauge_topic) {
+		for (i = 0; i < chip->child_num; i++) {
+			ic = chip->child_list[i].ic_dev;
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FCC_VDELTA_CHECK, ra_cv);
+			if (rc < 0) {
+				chg_err("gauge[%d](%s): can't vdelta set rc=%d\n", i, ic->manu_name, rc);
+				continue;
+			}
+		}
+	} else {
+		for (i = 0; i < chip->child_num; i++) {
+			if (mms != chip->gauge_topic_parallel[i])
+				continue;
+			ic = chip->gauge_ic_comb[i];
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FCC_VDELTA_CHECK, ra_cv);
+			if (rc < 0)
+				chg_err("gauge[%d](%s): can't vdelta set, rc=%d\n", i, ic->manu_name, rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
+static void oplus_gauge_fcc_vdelta_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_mms_gauge *chip = container_of(dwork, struct oplus_mms_gauge,
+				gauge_fcc_vdelta_work);
+
+	oplus_mms_gauge_vdelta_check(chip->gauge_topic, chip->fcc_ra_cv);
+	chip->fcc_ra_cv = false;
+}
+
+static int oplus_mms_gauge_ffc_t_ra_check(struct oplus_mms *mms)
+{
+	int rc = 0;
+	int i;
+	struct oplus_chg_ic_dev *ic;
+	struct oplus_mms_gauge *chip;
+
+	if (mms == NULL) {
+		chg_err("mms is NULL");
+		return -EINVAL;
+	}
+
+	chip = oplus_mms_get_drvdata(mms);
+	if (!chip)
+		return -ENOTSUPP;
+
+	if (mms == chip->gauge_topic) {
+		for (i = 0; i < chip->child_num; i++) {
+			ic = chip->child_list[i].ic_dev;
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FFC_T_RA_CHECK);
+			if (rc < 0) {
+				chg_err("gauge[%d](%s): can't t ra set rc=%d\n", i, ic->manu_name, rc);
+				continue;
+			}
+		}
+	} else {
+		for (i = 0; i < chip->child_num; i++) {
+			if (mms != chip->gauge_topic_parallel[i])
+				continue;
+			ic = chip->gauge_ic_comb[i];
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FFC_T_RA_CHECK);
+			if (rc < 0)
+				chg_err("gauge[%d](%s): can't t ra set, rc=%d\n", i, ic->manu_name, rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
+static void oplus_gauge_fcc_t_ra_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_mms_gauge *chip = container_of(dwork, struct oplus_mms_gauge,
+				gauge_fcc_t_ra_work);
+	union mms_msg_data data = { 0 };
+	int real_type = OPLUS_CHG_USB_TYPE_UNKNOWN;
+	int rc;
+
+	rc = oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_REAL_CHG_TYPE, &data, false);
+	if (!rc)
+		real_type = data.intval;
+
+	if (chip->wired_online && (real_type != OPLUS_CHG_USB_TYPE_UNKNOWN &&
+		real_type != OPLUS_CHG_USB_TYPE_SDP && real_type != OPLUS_CHG_USB_TYPE_CDP))
+		oplus_mms_gauge_ffc_t_ra_check(chip->gauge_topic);
+}
+
+static int oplus_mms_gauge_ra0_check(struct oplus_mms *mms)
+{
+	int rc = 0;
+	int i;
+	struct oplus_chg_ic_dev *ic;
+	struct oplus_mms_gauge *chip;
+
+	if (mms == NULL) {
+		chg_err("mms is NULL");
+		return -EINVAL;
+	}
+
+	chip = oplus_mms_get_drvdata(mms);
+	if (!chip)
+		return -ENOTSUPP;
+
+	if (mms == chip->gauge_topic) {
+		for (i = 0; i < chip->child_num; i++) {
+			ic = chip->child_list[i].ic_dev;
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FFC_RA0_CHECK);
+			if (rc < 0) {
+				chg_err("gauge[%d](%s): can't ra0 set rc=%d\n", i, ic->manu_name, rc);
+				continue;
+			}
+		}
+	} else {
+		for (i = 0; i < chip->child_num; i++) {
+			if (mms != chip->gauge_topic_parallel[i])
+				continue;
+			ic = chip->gauge_ic_comb[i];
+			rc = oplus_chg_ic_func(ic, OPLUS_IC_FUNC_GAUGE_FFC_RA0_CHECK);
+			if (rc < 0)
+				chg_err("gauge[%d](%s): can't ra0 set, rc=%d\n", i, ic->manu_name, rc);
+			return rc;
+		}
+	}
+
+	return rc;
+}
+
+static void oplus_gauge_fcc_ra0_work(struct work_struct *work)
+{
+	struct delayed_work *dwork = to_delayed_work(work);
+	struct oplus_mms_gauge *chip = container_of(dwork, struct oplus_mms_gauge,
+				gauge_fcc_ra0_work);
+	union mms_msg_data data = { 0 };
+	int real_type = OPLUS_CHG_USB_TYPE_UNKNOWN;
+	int rc;
+
+	rc = oplus_mms_get_item_data(chip->wired_topic, WIRED_ITEM_REAL_CHG_TYPE, &data, false);
+	if (!rc)
+		real_type = data.intval;
+
+	if (chip->wired_online && (real_type != OPLUS_CHG_USB_TYPE_UNKNOWN &&
+		real_type != OPLUS_CHG_USB_TYPE_SDP && real_type != OPLUS_CHG_USB_TYPE_CDP))
+		oplus_mms_gauge_ra0_check(chip->gauge_topic);
+}
+
 static int oplus_mms_gauge_calib_obtain_mutual_notifier_call(
 		struct notifier_block *nb, unsigned long param, void *v)
 {
@@ -6625,6 +6879,11 @@ static int oplus_mms_gauge_probe(struct platform_device *pdev)
 		oplus_gauge_read_stress_test_work);
 	INIT_DELAYED_WORK(&chip->gauge_term_volt_stress_test_work,
 		oplus_gauge_term_volt_stress_test_work);
+	INIT_DELAYED_WORK(&chip->check_imp_model_work,
+		  oplus_mms_gauge_check_imp_model_work);
+	INIT_DELAYED_WORK(&chip->gauge_fcc_vdelta_work, oplus_gauge_fcc_vdelta_work);
+	INIT_DELAYED_WORK(&chip->gauge_fcc_ra0_work, oplus_gauge_fcc_ra0_work);
+	INIT_DELAYED_WORK(&chip->gauge_fcc_t_ra_work, oplus_gauge_fcc_t_ra_work);
 
 	chip->sec_chip = oplus_sec_init();
 	if (chip->sec_chip == NULL)

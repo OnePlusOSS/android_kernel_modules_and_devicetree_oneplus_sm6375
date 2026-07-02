@@ -1154,6 +1154,49 @@ static void oplus_vooc_bad_volt_check(struct oplus_chg_vooc *chip)
 	}
 }
 
+static void oplus_vooc_parse_bad_volt_params(struct oplus_chg_vooc *chip,
+					     struct device_node *node)
+{
+	struct oplus_vooc_spec_config *spec = &chip->spec;
+	struct oplus_vooc_config *config = &chip->config;
+	int rc;
+
+	config->vooc_bad_volt_check_support = false;
+	config->vooc_bad_volt_check_head_mask = 0;
+
+	if (!of_property_read_bool(node, "oplus_spec,vooc_bad_volt") ||
+	    !of_property_read_bool(node, "oplus_spec,vooc_bad_volt_suspend")) {
+		chg_info("not support vooc bat vol check\n");
+		return;
+	}
+
+	rc = read_unsigned_data_from_node(node, "oplus_spec,vooc_bad_volt",
+					  spec->vooc_bad_volt,
+					  VOOC_BAT_VOLT_REGION);
+	if (rc < 0) {
+		chg_err("oplus_spec,vooc_bad_volt reading failed, rc=%d\n", rc);
+		return;
+	}
+
+	rc = read_unsigned_data_from_node(node, "oplus_spec,vooc_bad_volt_suspend",
+					  spec->vooc_bad_volt_suspend,
+					  VOOC_BAT_VOLT_REGION);
+	if (rc < 0) {
+		chg_err("oplus_spec,vooc_bad_volt_suspend reading failed, rc=%d\n",
+			rc);
+		return;
+	}
+
+	config->vooc_bad_volt_check_support = true;
+	rc = of_property_read_u8(node, "oplus_spec,vooc_bad_volt_check_head_mask",
+				&config->vooc_bad_volt_check_head_mask);
+	if (rc < 0) {
+		chg_err("oplus_spec,vooc_bad_volt_check_head_mask reading failed, rc=%d\n",
+			rc);
+		config->vooc_bad_volt_check_head_mask = 0;
+	}
+}
+
 static bool oplus_fastchg_is_allow_retry(struct oplus_chg_vooc *chip)
 {
 	union mms_msg_data data = { 0 };
@@ -3744,6 +3787,33 @@ static void oplus_vooc_plugout_clear_complete(struct oplus_chg_vooc *chip)
 	}
 }
 
+static void oplus_mms_handle_usb_status(struct oplus_chg_vooc *chip)
+{
+	int rc = 0;
+	union mms_msg_data data = { 0 };
+
+	rc = oplus_mms_get_item_data(chip->wired_topic,
+			WIRED_ITEM_USB_STATUS, &data, false);
+	if (rc < 0) {
+		chg_err("failed to get WIRED_ITEM_USB_STATUS, rc=%d\n", rc);
+		return;
+	}
+	if (chip->vooc_disable_votable == NULL) {
+		chg_err("vooc_disable_votable is NULL\n");
+		return;
+	}
+	if ((data.intval & USB_TEMP_HIGH) == USB_TEMP_HIGH) {
+		chg_err("!!!USB TEMP HIGH disable vooc\n");
+		rc = vote(chip->vooc_disable_votable, USB_VOTER, true, 1, false);
+		if (rc < 0)
+			chg_err("failed to vote vooc disable, rc=%d\n", rc);
+	} else {
+		rc = vote(chip->vooc_disable_votable, USB_VOTER, false, 0, false);
+		if (rc < 0)
+			chg_err("failed to vote vooc enable, rc=%d\n", rc);
+	}
+}
+
 static void oplus_vooc_wired_subs_callback(struct mms_subscribe *subs,
 					   enum mms_msg_type type, u32 id, bool sync)
 {
@@ -3810,6 +3880,9 @@ static void oplus_vooc_wired_subs_callback(struct mms_subscribe *subs,
 		case WIRED_ITEM_ICL_DONE_STATUS:
 			complete_all(&chip->icl_done_ack);
 			chg_info("accept icl done\n");
+			break;
+		case WIRED_ITEM_USB_STATUS:
+			oplus_mms_handle_usb_status(chip);
 			break;
 		default:
 			break;
@@ -5668,43 +5741,12 @@ static int oplus_chg_vooc_parse_dt(struct oplus_chg_vooc *chip,
 		config->vooc_abnormal_adapter_power_max = VOOC_ABNORMAL_ADAPTER_POWER_MAX;
 	}
 
-	if (!of_property_read_bool(node, "oplus_spec,vooc_bad_volt") ||
-	    !of_property_read_bool(node, "oplus_spec,vooc_bad_volt_suspend")) {
-		config->vooc_bad_volt_check_support = false;
-		chg_info("not support vool bat vol check\n");
-		goto skip_vooc_bad_volt_check;
-	}
-	rc = read_unsigned_data_from_node(node, "oplus_spec,vooc_bad_volt",
-					  spec->vooc_bad_volt,
-					  VOOC_BAT_VOLT_REGION);
-	if (rc < 0) {
-		chg_err("oplus_spec,vooc_bad_volt reading failed, rc=%d\n", rc);
-		config->vooc_bad_volt_check_support = false;
-		goto skip_vooc_bad_volt_check;
-	}
-	rc = read_unsigned_data_from_node(node,
-					  "oplus_spec,vooc_bad_volt_suspend",
-					  spec->vooc_bad_volt_suspend,
-					  VOOC_BAT_VOLT_REGION);
-	if (rc < 0) {
-		chg_err("oplus_spec,vooc_bad_volt_suspend reading failed, rc=%d\n",
-			rc);
-		config->vooc_bad_volt_check_support = false;
-		goto skip_vooc_bad_volt_check;
-	}
-	config->vooc_bad_volt_check_support = true;
-	rc = of_property_read_u8(node, "oplus_spec,vooc_bad_volt_check_head_mask", &config->vooc_bad_volt_check_head_mask);
-	if (rc < 0) {
-		chg_err("oplus_spec,vooc_bad_volt_check_head_mask reading failed, rc=%d\n", rc);
-		config->vooc_bad_volt_check_head_mask = 0;
-	}
+	oplus_vooc_parse_bad_volt_params(chip, node);
 	rc = of_property_read_u32(node, "oplus_spec,vooc_full_recheck_temp", &config->vooc_full_recheck_temp);
 	if (rc < 0) {
 		chg_info("not support vooc full recheck");
 		config->vooc_full_recheck_temp = -EINVAL;
 	}
-
-skip_vooc_bad_volt_check:
 	return 0;
 }
 

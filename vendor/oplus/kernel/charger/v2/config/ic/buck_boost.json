@@ -1534,6 +1534,50 @@
             }
         },
         {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_POWER_MOS_ENABLE",
+            "desc": {
+                "zh": "获取补电 pmos开关状态"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool *"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "out",
+                    "desc": {
+                        "zh": "1: 使能, 0: 关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
+            "lable": "OPLUS_IC_FUNC_BUCK_SET_POWER_MOS_ENABLE",
+            "desc": {
+                "zh": "补电 pmos开关控制"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["bool"],
+            "parameter_desc": [
+                {
+                    "range": "0-1",
+                    "type": "in",
+                    "desc": {
+                        "zh": "1: 使能, 0: 关闭"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
             "lable": "OPLUS_IC_FUNC_BUCK_SET_BURST_MODE",
             "desc": {
                 "zh": "设置buck的burst mode"
@@ -1610,6 +1654,35 @@
             }
         },
         {
+            "lable": "OPLUS_IC_FUNC_BUCK_GET_CC_STATE",
+            "desc": {
+                "zh": "获取CC1合CC2的状态"
+            },
+            "auto_debug_code": true,
+            "parameter_list": ["u8 *", "u8 *"],
+            "parameter_desc": [
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "用于存放CC1状态值"
+                    }
+                },
+                {
+                    "range": "0-*",
+                    "type": "out",
+                    "desc": {
+                        "zh": "用于存放CC2的状态值"
+                    }
+                }
+            ],
+            "vict": {
+                "read": false,
+                "write": false,
+                "overwrite": false
+            }
+        },
+        {
             "lable": "OPLUS_IC_FUNC_BUCK_SET_DPDM_OVP_DISABLE",
             "desc": {
                 "zh": "关闭WCD OVP"
@@ -1633,5 +1706,5 @@
         }
     ],
 
-    "version": "V6.0:59:62c8c8c4eb192fe714d79427a0e201fdd1e0d3a3d0beb25f87208b1fa1ce75b3"
+    "version": "V7.0:62:970cbf146864b0e9f4f88e9cc70c96bec75af89f8906b0cec2ed830c65f8744b"
 }

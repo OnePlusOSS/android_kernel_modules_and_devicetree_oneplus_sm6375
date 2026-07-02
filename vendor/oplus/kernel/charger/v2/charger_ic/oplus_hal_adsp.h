@@ -179,6 +179,9 @@ enum oplus_ap_message_id {
 	AP_MESSAGE_GET_GAUGE_LIFETIME_INFO,
 	AP_MESSAGE_GET_GAUGE_R_INFO,
 	AP_MESSAGE_GET_GAUGE_THREE_LEVEL_TERM_VOLT,
+	AP_MESSAGE_GET_GAUGE_RA0_INFO,
+	AP_MESSAGE_GET_GAUGE_IMP_INFO,
+	AP_MESSAGE_GET_GAUGE_DELTA_VOLTAGE_INFO,
 	AP_MESSAGE_MAX_SIZE = 32,
 };
 
@@ -386,6 +389,8 @@ enum usb_property_id {
 	USB_REVERSE_CHG_SET_CURRENT,
 	USB_RVS_HIGH_MODE_EN,
 	USB_SET_WIRED_USB_STATUS,
+	/* PD partner SVID (lower 16 bits valid) */
+	USB_ADAPTER_SVID,
 #endif /*OPLUS_FEATURE_CHG_BASIC*/
 	USB_PROP_MAX,
 };
@@ -807,6 +812,10 @@ struct battery_chg_dev {
 	struct work_struct		gauge_cali_track_by_full_work;
 	struct mutex                    pre_info_lock;
 	struct mutex                    cur_info_lock;
+
+	struct work_struct	gauge_ra0_check_work;
+	struct work_struct	gauge_imp_check_work;
+	struct work_struct	gauge_delta_voltage_check_work;
 #endif
 #ifdef OPLUS_FEATURE_CHG_BASIC
 	int vchg_trig_irq;

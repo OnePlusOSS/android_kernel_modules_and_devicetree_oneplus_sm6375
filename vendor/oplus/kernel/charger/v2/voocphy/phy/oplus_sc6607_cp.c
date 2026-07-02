@@ -47,6 +47,7 @@ struct sc6607 {
 	s32 chip_id;
 	bool error_reported;
 	bool vac_support;
+	bool shutdown_pending;
 	bool work_start;
 	enum oplus_cp_work_mode cp_work_mode;
 	enum oplus_dpdm_switch_mode dpdm_switch_mode;
@@ -844,6 +845,17 @@ static int sc6607_set_charge_watchdog_timer(struct sc6607 *voocphy, u32 timeout)
 
 static void sc6607_voocphy_send_handshake(struct oplus_voocphy_manager *voocphy)
 {
+	struct sc6607 *chip;
+
+	if (!voocphy || !voocphy->priv_data)
+		return;
+
+	chip = voocphy->priv_data;
+	if (chip->shutdown_pending) {
+		chg_info("skip handshake pulse in shutdown state\n");
+		return;
+	}
+
 	chg_info("\n");
 	sc6607_voocphy_write_byte(voocphy->client, SC6607_REG_PHY_CTRL, 0x81);
 }
@@ -2431,6 +2443,15 @@ static int sc6607_voocphy_remove(struct i2c_client *client)
 
 static void sc6607_voocphy_shutdown(struct i2c_client *client)
 {
+	struct oplus_voocphy_manager *voocphy = i2c_get_clientdata(client);
+	struct sc6607 *chip;
+
+	if (!voocphy || !voocphy->priv_data)
+		return;
+
+	chip = voocphy->priv_data;
+	chip->shutdown_pending = true;
+	chg_info("set shutdown flag, block handshake pulse\n");
 	return;
 }
 

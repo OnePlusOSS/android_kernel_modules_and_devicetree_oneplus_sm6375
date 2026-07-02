@@ -1000,6 +1000,32 @@ static void oplus_chglib_parallel_subs_callback(struct mms_subscribe *subs,
 	}
 }
 
+static int vphy_set_usb_dischg_enable(struct oplus_chg_ic_dev *ic_dev, bool enable)
+{
+	struct vphy_chip *chip;
+	int rc = 0;
+
+	if (!ic_dev->online) {
+		chg_err("ic_dev is offline\n");
+		return -ENODEV;
+	}
+	chip = oplus_chglib_get_vphy_chip(ic_dev->dev);
+	if ((chip == NULL) || (chip->vinf == NULL)) {
+		chg_err("vphy_chip/vinf is NULL\n");
+		return -ENODEV;
+	}
+
+	/*to ap voocphy*/
+	if (chip->vinf->vphy_set_usb_dischg_enable) {
+		chip->vinf->vphy_set_usb_dischg_enable(chip->dev, enable);
+	} else {
+		chg_err("vphy_set_usb_dischg_enable not supported\n");
+		rc = -ENOTSUPP;
+	}
+
+	return rc;
+}
+
 static void oplus_chglib_subscribe_parallel_topic(struct oplus_mms *topic,
 						void *prv_data)
 {
@@ -1461,6 +1487,14 @@ static void *vphy_get_func(struct oplus_chg_ic_dev *ic_dev,
 	case OPLUS_IC_FUNC_VOOCPHY_GET_FASTCHG_COMMU_ING:
 		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_VOOCPHY_GET_FASTCHG_COMMU_ING,
 					       vphy_get_fastchg_commu_ing);
+		break;
+	case OPLUS_IC_FUNC_VOOCPHY_SET_VAC2V2X_UVP:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_VOOCPHY_SET_VAC2V2X_UVP,
+					       vphy_set_chg_vac2v2x_uvp);
+		break;
+	case OPLUS_IC_FUNC_VOOCPHY_SET_USB_DISCHG_ENABLE:
+		func = OPLUS_CHG_IC_FUNC_CHECK(OPLUS_IC_FUNC_VOOCPHY_SET_USB_DISCHG_ENABLE,
+					       vphy_set_usb_dischg_enable);
 		break;
 	default:
 		chg_err("this func(=%d) is not supported\n", func_id);
